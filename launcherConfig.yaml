@@ -1,8 +1,6 @@
-ros_master_uri: http://localhost:11311
-ros_ip: 192.168.0.10
+ros_master_uri: http://CONTROL_PC_IP:11311
+ros_hostname: auto
 package: harada-tsubakino
 launch_file: harada-tsubakino.launch
-args:
-  group: pi
-workspace_setup: ''
+args: {}
 extra_script: ''

@@ -1,11 +1,23 @@
 <launch>
+  <arg name="group" default="$(optenv HOSTNAME rover)" />
   <param name="rosconsole_config_file" value="$(find harada-tsubakino)/config/rosconsole.conf" if="$(optenv USE_ROSLOG_CONFIG false)" />
 
-  <node pkg="lightrover_ros" type="i2c_controller.py" name="rover_i2c_controller" />
-  <node pkg="lightrover_ros" type="pos_controller.py" name="rover_pos" />
-  <node pkg="harada-tsubakino" type="serial_sensor_bridge.py" name="serial_sensor_bridge">
-    <param name="port" value="/dev/ttyACM0" />
-    <param name="baud" value="115200" />
-  </node>
+  <group ns="$(arg group)">
+    <node pkg="lightrover_ros" type="i2c_controller.py" name="rover_i2c_controller" />
+    <node pkg="lightrover_ros" type="odometry.py" name="rover_odometry">
+      <!-- The upstream node uses unprefixed TF frame IDs. Keep that TF out of
+           the shared /tf topic. The onboard OTOS publishes a separate,
+           explicitly named sensor transform below. -->
+      <remap from="/tf" to="/$(arg group)/wheel_tf_internal" />
+    </node>
+    <node pkg="lightrover_ros" type="pos_controller.py" name="rover_pos" />
+    <node pkg="harada-tsubakino" type="serial_sensor_bridge.py" name="serial_sensor_bridge">
+      <param name="port" value="/dev/ttyACM0" />
+      <param name="baud" value="115200" />
+      <param name="otos_odom_frame" value="$(arg group)/otos_odom" />
+      <param name="otos_base_link_frame" value="$(arg group)/otos_base_link" />
+      <param name="imu_frame" value="$(arg group)/hmc6343_link" />
+    </node>
+  </group>
 
 </launch>

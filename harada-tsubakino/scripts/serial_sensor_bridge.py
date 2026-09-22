@@ -14,8 +14,10 @@ class SerialSensorBridge:
         startup_delay = rospy.get_param("~startup_delay", 2.0)
         ping_interval = rospy.get_param("~ping_interval", 0.3)
 
-        self.odom_frame = rospy.get_param("~odom_frame", "odom")
-        self.base_link_frame = rospy.get_param("~base_link_frame", "base_link")
+        self.otos_odom_frame = rospy.get_param("~otos_odom_frame", "otos_odom")
+        self.otos_base_link_frame = rospy.get_param(
+            "~otos_base_link_frame", "otos_base_link"
+        )
         self.imu_frame = rospy.get_param("~imu_frame", "hmc6343_link")
         self.ping_interval = rospy.Duration(ping_interval)
         self.last_ping_time = rospy.Time(0)
@@ -119,8 +121,8 @@ class SerialSensorBridge:
             (x, y, 0.0),
             quaternion,
             stamp,
-            self.base_link_frame,
-            self.odom_frame,
+            self.otos_base_link_frame,
+            self.otos_odom_frame,
         )
 
     def handle_hmc(self, parts, stamp):

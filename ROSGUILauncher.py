@@ -1,8 +1,10 @@
 import os
 import signal
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import yaml
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -20,34 +22,50 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-CONFIG_FILE = "launcherConfig.yaml"
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_FILE = BASE_DIR / "launcherConfig.yaml"
+
+
+def default_group():
+    """Use the short Raspberry Pi hostname as the default ROS namespace."""
+    return socket.gethostname().split(".", 1)[0]
+
+
+def default_ros_hostname():
+    """Advertise this rover through its Avahi .local name."""
+    return f"{default_group()}.local"
 
 
 @dataclass
 class LaunchConfig:
-    ros_master_uri: str = "http://localhost:11311"
-    ros_ip: str = "192.168.0.10"
-    package: str = "my_pkg"
-    launch_file: str = "my.launch"
-    args: dict = field(default_factory=lambda: {"group": "robot1"})
+    ros_master_uri: str = "http://CONTROL_PC_IP:11311"
+    ros_hostname: str = field(default_factory=default_ros_hostname)
+    package: str = "harada-tsubakino"
+    launch_file: str = "harada-tsubakino.launch"
+    args: dict = field(default_factory=lambda: {"group": default_group()})
     extra_script: str = ""
 
     @classmethod
     def from_dict(cls, data):
         data = data or {}
+        args = dict(data.get("args", {}))
+        # Always refresh the per-rover namespace from the local hostname.
+        # This also migrates old copied configs such as `group: pi`.
+        args["group"] = default_group()
         return cls(
             ros_master_uri=data.get("ros_master_uri", cls.ros_master_uri),
-            ros_ip=data.get("ros_ip", cls.ros_ip),
+            # Ignore legacy ros_ip values: the rover is advertised by Avahi.
+            ros_hostname=default_ros_hostname(),
             package=data.get("package", cls.package),
             launch_file=data.get("launch_file", cls.launch_file),
-            args=dict(data.get("args", {})),
+            args=args,
             extra_script=data.get("extra_script", cls.extra_script),
         )
 
     def to_dict(self):
         return {
             "ros_master_uri": self.ros_master_uri,
-            "ros_ip": self.ros_ip,
+            "ros_hostname": "auto",
             "package": self.package,
             "launch_file": self.launch_file,
             "args": self.args,
@@ -68,7 +86,8 @@ class ROSProcess:
 
         env = os.environ.copy()
         env["ROS_MASTER_URI"] = config.ros_master_uri
-        env["ROS_IP"] = config.ros_ip
+        env.pop("ROS_IP", None)
+        env["ROS_HOSTNAME"] = config.ros_hostname
 
         ros_command = [
             "roslaunch",
@@ -142,7 +161,8 @@ class MainWindow(QWidget):
         self.log_threads = []
 
         self.master_uri = QLineEdit()
-        self.ros_ip = QLineEdit()
+        self.ros_hostname = QLineEdit()
+        self.ros_hostname.setReadOnly(True)
         self.package = QLineEdit()
         self.launch_file = QLineEdit()
         self.args = QLineEdit()
@@ -168,8 +188,8 @@ class MainWindow(QWidget):
         layout.addWidget(QLabel("ROS_MASTER_URI"))
         layout.addWidget(self.master_uri)
 
-        layout.addWidget(QLabel("ROS_IP"))
-        layout.addWidget(self.ros_ip)
+        layout.addWidget(QLabel("ROS_HOSTNAME (auto)"))
+        layout.addWidget(self.ros_hostname)
 
         layout.addWidget(QLabel("Package"))
         layout.addWidget(self.package)
@@ -217,7 +237,7 @@ class MainWindow(QWidget):
     def get_config(self):
         return LaunchConfig(
             ros_master_uri=self.master_uri.text().strip(),
-            ros_ip=self.ros_ip.text().strip(),
+            ros_hostname=self.ros_hostname.text().strip(),
             package=self.package.text().strip(),
             launch_file=self.launch_file.text().strip(),
             args=self.parse_args(),
@@ -226,7 +246,7 @@ class MainWindow(QWidget):
 
     def apply_config(self, config: LaunchConfig):
         self.master_uri.setText(config.ros_master_uri)
-        self.ros_ip.setText(config.ros_ip)
+        self.ros_hostname.setText(config.ros_hostname)
         self.package.setText(config.package)
         self.launch_file.setText(config.launch_file)
         self.args.setText(self.format_args(config.args))
@@ -243,6 +263,10 @@ class MainWindow(QWidget):
         self.apply_config(LaunchConfig())
 
     def validate_config(self, config: LaunchConfig):
+        if not config.ros_master_uri or "CONTROL_PC_IP" in config.ros_master_uri:
+            return "Replace CONTROL_PC_IP with the control PC's IP address."
+        if not config.ros_hostname or not config.ros_hostname.endswith(".local"):
+            return "The automatically generated ROS_HOSTNAME is invalid."
         if not config.package:
             return "Package is required."
         if not config.launch_file:
@@ -269,7 +293,7 @@ class MainWindow(QWidget):
         self.log.clear()
         self.append_log("Started ROS launch process.")
         self.append_log(f"ROS_MASTER_URI={config.ros_master_uri}")
-        self.append_log(f"ROS_IP={config.ros_ip}")
+        self.append_log(f"ROS_HOSTNAME={config.ros_hostname}")
         self._start_log_thread(self.ros.proc)
 
         if self.ros.extra_proc:
