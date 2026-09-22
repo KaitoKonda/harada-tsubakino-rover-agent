@@ -29,6 +29,13 @@ GUIを使っている場合、`ROS_HOSTNAME (auto)` が `<ホスト名>.local` �
 - `No module named yaml`: `sudo apt install python3-yaml`
 - `No module named PyQt5`: `sudo apt install python3-pyqt5`
 - ファイルがない: `cd ~/harada-tsubakino-rover-agent && python3 update.py -g`
+- `yaml.scanner.ScannerError`: 次を実行すると、壊れた設定をバックアップして
+  書式を自動修復します。
+
+  ```bash
+  cd ~/harada-tsubakino-rover-agent
+  python3 update.py -g
+  ```
 
 ## `CONTROL_PC_IP` という文字がログに出る
 

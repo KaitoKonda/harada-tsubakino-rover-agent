@@ -78,9 +78,42 @@ python3 update.py -r -g
 - デスクトップに `ROSGUILauncher.desktop` を配置
 
 2回目以降の更新では、入力済みの `~/ROSGUILauncher/launcherConfig.yaml` は
-上書きしません。
+正常な場合は上書きしません。YAMLの書式が壊れている場合だけ、制御用PCのIPを
+可能な限り引き継いで自動修復します。修復前のファイルは
+`launcherConfig.yaml.invalid-日時` という名前で同じフォルダに残ります。
 
 最後に赤い `Error` が出なければ次へ進みます。
+
+### 既存ローバを最新版へ更新する
+
+既にセットアップ済みのローバでは、GUIの `Stop` を押して終了してから、次の順番で
+更新します。
+
+```bash
+cd ~/harada-tsubakino-rover-agent
+git status --short
+```
+
+`git status --short` が何も表示しないことを確認します。ファイル名が表示された場合は、
+ローバ上に未保存の変更があります。そこで止めて、変更を消す操作はせず、
+[トラブル対応](troubleshooting.md#更新できない手元の変更がある)を確認してください。
+
+何も表示されなかった場合だけ、続けて次を実行します。
+
+```bash
+git pull --ff-only
+python3 update.py -r -g
+```
+
+`-r` はROSパッケージの配置とビルド、`-g` は起動GUIとデスクトップアイコンの更新を
+行います。正常な `~/ROSGUILauncher/launcherConfig.yaml` と、そこに設定した制御用PCの
+IPアドレスは保持されます。設定ファイルのYAML書式が壊れている場合は自動修復され、
+修復前の内容は `launcherConfig.yaml.invalid-日時` として保存されます。
+
+更新後、デスクトップの `ROS GUI Launcher` を起動します。GUIだけを更新する場合は
+`python3 update.py -g`、ROSパッケージだけを更新する場合は `python3 update.py -r` を
+使用できます。オプションを付けずに `python3 update.py` を実行するとArduinoへの
+書き込みも含む全処理が走るため、通常のソフトウェア更新では使用しません。
 
 ## 5. Arduino CLIを入れる
 

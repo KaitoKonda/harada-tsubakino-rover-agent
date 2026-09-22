@@ -254,8 +254,22 @@ class MainWindow(QWidget):
 
     def load_initial_config(self):
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, encoding="utf-8") as file_obj:
-                config = LaunchConfig.from_dict(yaml.safe_load(file_obj))
+            try:
+                with open(CONFIG_FILE, encoding="utf-8") as file_obj:
+                    loaded = yaml.safe_load(file_obj)
+                if loaded is not None and not isinstance(loaded, dict):
+                    raise ValueError("The top-level YAML value must be a mapping.")
+                config = LaunchConfig.from_dict(loaded)
+            except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+                self.apply_config(LaunchConfig())
+                message = (
+                    f"Could not read {CONFIG_FILE}:\n{exc}\n\n"
+                    "Run 'python3 update.py -g' from the repository to repair "
+                    "the configuration."
+                )
+                self.append_log(f"ERROR: {message}")
+                QMessageBox.critical(self, "Invalid Launcher Configuration", message)
+                return
             self.apply_config(config)
             self.append_log(f"Loaded config from {CONFIG_FILE}.")
             return
