@@ -5,13 +5,18 @@
   <group ns="$(arg group)">
     <node pkg="lightrover_ros" type="i2c_controller.py" name="rover_i2c_controller" />
     <node pkg="lightrover_ros" type="odometry.py" name="rover_odometry">
+      <!-- Publish wheel odometry under the same source-based hierarchy as OTOS. -->
+      <remap from="odom" to="odometry/wheel" />
       <!-- The upstream node uses unprefixed TF frame IDs. Keep that TF out of
            the shared /tf topic. The onboard OTOS publishes a separate,
            explicitly named sensor transform below. -->
       <remap from="/tf" to="/$(arg group)/wheel_tf_internal" />
     </node>
-    <node pkg="lightrover_ros" type="pos_controller.py" name="rover_pos" />
-    <node pkg="harada-tsubakino" type="serial_sensor_bridge.py" name="serial_sensor_bridge">
+    <node pkg="lightrover_ros" type="pos_controller.py" name="rover_pos">
+      <!-- Keep velocity feedback connected to the renamed wheel topic. -->
+      <remap from="odom" to="odometry/wheel" />
+    </node>
+    <node pkg="harada-tsubakino" type="serialSensorBridge.py" name="serial_sensor_bridge">
       <param name="port" value="/dev/ttyACM0" />
       <param name="baud" value="115200" />
       <param name="otos_odom_frame" value="$(arg group)/otos_odom" />

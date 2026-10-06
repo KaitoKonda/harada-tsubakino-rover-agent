@@ -17,7 +17,7 @@
 行頭の `$` は説明用なので入力しません。
 
 Raspberry Pi のホスト名は、ローバを識別する ROS 名前空間にも使われます。
-例えばホスト名が `pi1` なら、センサートピックは `/pi1/otos_pose` になります。
+例えばホスト名が `pi1` なら、センサートピックは `/pi1/odometry/otos` になります。
 OSのログインユーザー名は全ローバで `pi` に統一して構いません。
 
 ## 1. VSTONE公式セットアップを終える
@@ -75,7 +75,7 @@ python3 update.py -r -g
 
 - ROS パッケージを `~/catkin_ws/src/harada-tsubakino` にコピーしてビルド
 - GUI を `~/ROSGUILauncher` にコピー
-- デスクトップに `ROSGUILauncher.desktop` を配置
+- デスクトップに `rosGuiLauncher.desktop` を配置
 
 2回目以降の更新では、入力済みの `~/ROSGUILauncher/launcherConfig.yaml` は
 正常な場合は上書きしません。YAMLの書式が壊れている場合だけ、制御用PCのIPを
@@ -230,7 +230,7 @@ GUIは短いホスト名が `pi3` なら `ROS_HOSTNAME=pi3.local` を自動設�
 次がすべて満たされればセットアップ完了です。
 
 - `~/catkin_ws/src/harada-tsubakino` がある
-- `~/ROSGUILauncher/ROSGUILauncher.py` がある
+- `~/ROSGUILauncher/rosGuiLauncher.py` がある
 - デスクトップに ROS GUI Launcher がある
 - `arduino-cli board list` で Nano ESP32 が見える
 - `launcherConfig.yaml` に制御用PCのIPアドレスを書いた

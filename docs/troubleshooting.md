@@ -23,7 +23,7 @@ GUIを使っている場合、`ROS_HOSTNAME (auto)` が `<ホスト名>.local` �
 端末から直接起動すると、原因が表示されます。
 
 ```bash
-~/ROSGUILauncher/ROSGUILauncher.sh
+~/ROSGUILauncher/rosGuiLauncher.sh
 ```
 
 - `No module named yaml`: `sudo apt install python3-yaml`
@@ -84,11 +84,11 @@ ros_master_uri: http://CONTROL_PC_IP:11311
 モーター出力を更新します。次を確認します。
 
 ```bash
-rostopic hz /pi1/odom
-rostopic info /pi1/odom
+rostopic hz /pi1/odometry/wheel
+rostopic info /pi1/odometry/wheel
 ```
 
-ホスト名が `pi3` なら `/pi3/odom` と読み替えます。更新されていない場合は
+ホスト名が `pi3` なら `/pi3/odometry/wheel` と読み替えます。更新されていない場合は
 `rover_odometry`、`rover_i2c_controller`、I2C接続のエラーをGUIログで確認します。
 
 ## 制御用PCからローバ名を解決できない
@@ -161,7 +161,7 @@ arduino-cli board list
 ```bash
 arduino-cli compile --upload --port PORT \
   --fqbn arduino:esp32:nano_nora \
-  ~/harada-tsubakino-rover-agent/OtosHmcSerialSender
+  ~/harada-tsubakino-rover-agent/otosHmcSerialSender
 ```
 
 ライブラリ不足と表示された場合は [初回セットアップ手順](setup.md#5-arduino-cliを入れる)
@@ -170,8 +170,8 @@ arduino-cli compile --upload --port PORT \
 ## トピックはあるが値が来ない
 
 ```bash
-rostopic info /pi1/otos_pose
-rostopic hz /pi1/otos_pose
+rostopic info /pi1/odometry/otos
+rostopic hz /pi1/odometry/otos
 ```
 
 - Publisher が 0: ローバ側ノードが起動していません

@@ -29,31 +29,31 @@ const float kGToMps2 = 9.80665f;
 QwiicOTOS otos;
 SFE_HMC6343 compass;
 
-bool otos_ready = false;
-bool compass_ready = false;
-bool streaming_enabled = false;
-unsigned long last_otos_publish_ms = 0;
-unsigned long last_compass_publish_ms = 0;
-unsigned long last_status_ms = 0;
-unsigned long last_bridge_seen_ms = 0;
-String command_buffer;
+bool otosReady = false;
+bool compassReady = false;
+bool streamingEnabled = false;
+unsigned long lastOtosPublishMs = 0;
+unsigned long lastCompassPublishMs = 0;
+unsigned long lastStatusMs = 0;
+unsigned long lastBridgeSeenMs = 0;
+String commandBuffer;
 }
 
 void resetSensors()
 {
-  if (!otos_ready)
+  if (!otosReady)
   {
-    otos_ready = otos.begin();
-    if (otos_ready)
+    otosReady = otos.begin();
+    if (otosReady)
     {
       otos.setLinearUnit(kSfeOtosLinearUnitMeters);
       otos.setAngularUnit(kSfeOtosAngularUnitRadians);
     }
   }
 
-  compass_ready = compass.init();
+  compassReady = compass.init();
 
-  if (otos_ready)
+  if (otosReady)
   {
     otos.calibrateImu();
     otos.resetTracking();
@@ -67,8 +67,8 @@ void setup()
 
   Wire.begin();
 
-  otos_ready = otos.begin();
-  if (otos_ready)
+  otosReady = otos.begin();
+  if (otosReady)
   {
     otos.setLinearUnit(kSfeOtosLinearUnitMeters);
     otos.setAngularUnit(kSfeOtosAngularUnitRadians);
@@ -79,8 +79,8 @@ void setup()
     Serial.println("STATUS,OTOS_INIT_FAILED");
   }
 
-  compass_ready = compass.init();
-  if (compass_ready)
+  compassReady = compass.init();
+  if (compassReady)
   {
     Serial.println("STATUS,HMC_READY");
   }
@@ -90,38 +90,38 @@ void setup()
   }
 
   resetSensors();
-  last_bridge_seen_ms = millis();
+  lastBridgeSeenMs = millis();
 }
 
 void handleCommand(const String &command)
 {
   if (command == "START")
   {
-    streaming_enabled = true;
-    last_bridge_seen_ms = millis();
+    streamingEnabled = true;
+    lastBridgeSeenMs = millis();
     Serial.println("STATUS,STREAM_ON");
     return;
   }
 
   if (command == "STOP")
   {
-    streaming_enabled = false;
+    streamingEnabled = false;
     Serial.println("STATUS,STREAM_OFF");
     return;
   }
 
   if (command == "PING")
   {
-    last_bridge_seen_ms = millis();
+    lastBridgeSeenMs = millis();
     return;
   }
 
   if (command == "RESET")
   {
     resetSensors();
-    last_otos_publish_ms = 0;
-    last_compass_publish_ms = 0;
-    last_bridge_seen_ms = millis();
+    lastOtosPublishMs = 0;
+    lastCompassPublishMs = 0;
+    lastBridgeSeenMs = millis();
     Serial.println("STATUS,RESET_DONE");
     return;
   }
@@ -140,25 +140,25 @@ void pollCommands()
 
     if (incoming == '\n')
     {
-      if (command_buffer.length() > 0)
+      if (commandBuffer.length() > 0)
       {
-        handleCommand(command_buffer);
-        command_buffer = "";
+        handleCommand(commandBuffer);
+        commandBuffer = "";
       }
       continue;
     }
 
-    command_buffer += incoming;
+    commandBuffer += incoming;
   }
 }
 
-void publishOtos(unsigned long now_ms)
+void publishOtos(unsigned long nowMs)
 {
   sfe_otos_pose2d_t pose;
   otos.getPosition(pose);
 
   Serial.print("OTOS,");
-  Serial.print(now_ms);
+  Serial.print(nowMs);
   Serial.print(",");
   Serial.print(pose.x, 6);
   Serial.print(",");
@@ -167,64 +167,64 @@ void publishOtos(unsigned long now_ms)
   Serial.println(pose.h, 6);
 }
 
-void publishCompass(unsigned long now_ms)
+void publishCompass(unsigned long nowMs)
 {
   compass.readHeading();
   compass.readAccel();
 
-  const float roll_rad = ((float)compass.roll / 10.0f) * kDegToRad;
-  const float pitch_rad = ((float)compass.pitch / 10.0f) * kDegToRad;
-  const float heading_rad = ((float)compass.heading / 10.0f) * kDegToRad;
-  const float accel_x_mps2 = ((float)compass.accelX / 1024.0f) * kGToMps2;
-  const float accel_y_mps2 = ((float)compass.accelY / 1024.0f) * kGToMps2;
-  const float accel_z_mps2 = ((float)compass.accelZ / 1024.0f) * kGToMps2;
+  const float rollRad = ((float)compass.roll / 10.0f) * kDegToRad;
+  const float pitchRad = ((float)compass.pitch / 10.0f) * kDegToRad;
+  const float headingRad = ((float)compass.heading / 10.0f) * kDegToRad;
+  const float accelXMps2 = ((float)compass.accelX / 1024.0f) * kGToMps2;
+  const float accelYMps2 = ((float)compass.accelY / 1024.0f) * kGToMps2;
+  const float accelZMps2 = ((float)compass.accelZ / 1024.0f) * kGToMps2;
 
   Serial.print("HMC,");
-  Serial.print(now_ms);
+  Serial.print(nowMs);
   Serial.print(",");
-  Serial.print(roll_rad, 6);
+  Serial.print(rollRad, 6);
   Serial.print(",");
-  Serial.print(pitch_rad, 6);
+  Serial.print(pitchRad, 6);
   Serial.print(",");
-  Serial.print(heading_rad, 6);
+  Serial.print(headingRad, 6);
   Serial.print(",");
-  Serial.print(accel_x_mps2, 6);
+  Serial.print(accelXMps2, 6);
   Serial.print(",");
-  Serial.print(accel_y_mps2, 6);
+  Serial.print(accelYMps2, 6);
   Serial.print(",");
-  Serial.println(accel_z_mps2, 6);
+  Serial.println(accelZMps2, 6);
 }
 
 void loop()
 {
   pollCommands();
 
-  const unsigned long now_ms = millis();
+  const unsigned long nowMs = millis();
   bool published = false;
 
-  if (streaming_enabled && (now_ms - last_bridge_seen_ms >= kBridgeTimeoutMs))
+  if (streamingEnabled && (nowMs - lastBridgeSeenMs >= kBridgeTimeoutMs))
   {
-    streaming_enabled = false;
+    streamingEnabled = false;
     Serial.println("STATUS,BRIDGE_TIMEOUT");
   }
 
-  if (streaming_enabled && otos_ready && (now_ms - last_otos_publish_ms >= kOtosPublishIntervalMs))
+  if (streamingEnabled && otosReady && (nowMs - lastOtosPublishMs >= kOtosPublishIntervalMs))
   {
-    last_otos_publish_ms = now_ms;
-    publishOtos(now_ms);
+    lastOtosPublishMs = nowMs;
+    publishOtos(nowMs);
     published = true;
   }
 
-  if (streaming_enabled && compass_ready && (now_ms - last_compass_publish_ms >= kCompassPublishIntervalMs))
+  if (streamingEnabled && compassReady && (nowMs - lastCompassPublishMs >= kCompassPublishIntervalMs))
   {
-    last_compass_publish_ms = now_ms;
-    publishCompass(now_ms);
+    lastCompassPublishMs = nowMs;
+    publishCompass(nowMs);
     published = true;
   }
 
-  if (!otos_ready && !compass_ready && (now_ms - last_status_ms >= kStatusIntervalMs))
+  if (!otosReady && !compassReady && (nowMs - lastStatusMs >= kStatusIntervalMs))
   {
-    last_status_ms = now_ms;
+    lastStatusMs = nowMs;
     Serial.println("STATUS,NO_SENSORS_READY");
   }
 

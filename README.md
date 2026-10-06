@@ -26,8 +26,8 @@ Raspberry Pi（このリポジトリ）
 主な構成要素は以下です。
 
 - `harada-tsubakino/`: ライトローバーとセンサーを起動する ROS パッケージ
-- `OtosHmcSerialSender/`: Nano ESP32 に書き込むスケッチ
-- `ROSGUILauncher.py`: ROS の接続先を設定して起動する画面
+- `otosHmcSerialSender/`: Nano ESP32 に書き込むスケッチ
+- `rosGuiLauncher.py`: ROS の接続先を設定して起動する画面
 - `update.py`: ROS パッケージ、Arduino スケッチ、GUI を更新する補助ツール
 
 ## 前提
@@ -57,12 +57,14 @@ ROS名前空間 `group` には、Raspberry Pi の短いホスト名が自動的�
 | 名前 | 型 | 内容 |
 | --- | --- | --- |
 | `/pi1/rover_drive` | `geometry_msgs/Twist` | ライトローバーへの速度指令 |
-| `/pi1/odom` | `nav_msgs/Odometry` | 車輪エンコーダによる速度フィードバック |
-| `/pi1/otos_pose` | `geometry_msgs/Pose2D` | OTOS の平面位置・方位 |
+| `/pi1/odometry/wheel` | `nav_msgs/Odometry` | 車輪エンコーダによる速度フィードバック |
+| `/pi1/odometry/otos` | `geometry_msgs/Pose2D` | OTOS の平面位置・方位 |
+| `/pi1/odometry/motive` | `nav_msgs/Odometry` | 制御用 PC の Motive ブリッジが配信する位置・方位 |
 | `/pi1/hmc6343_rpy` | `geometry_msgs/Vector3Stamped` | HMC6343 の姿勢角 |
 | `/pi1/hmc6343_accel` | `geometry_msgs/Vector3Stamped` | HMC6343 の加速度 |
 | `/tf` | `tf/tfMessage` | OTOS専用の `pi1/otos_odom` から `pi1/otos_base_link` への姿勢変換 |
 
 OTOS の距離は m、角度は rad、加速度は m/s² です。
-`/pi1/odom`は車輪エンコーダ由来、`/pi1/otos_pose`と上記TFは搭載OTOS由来であり、
+`/pi1/odometry/motive` は制御用 PC で Motive ブリッジを起動したときだけ現れます。
+`/pi1/odometry/wheel`は車輪エンコーダ由来、`/pi1/odometry/otos`と上記TFは搭載OTOS由来であり、
 同じオドメトリとして混同しないでください。

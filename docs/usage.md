@@ -35,7 +35,7 @@ ping -c 4 CONTROL_PC_IP
 
 ## 3. ローバ側ROSノードを起動する
 
-Raspberry Pi のデスクトップにある `ROSGUILauncher.desktop` をダブルクリックします。
+Raspberry Pi のデスクトップにある `rosGuiLauncher.desktop` をダブルクリックします。
 確認画面が出た場合は「実行」を選びます。
 
 画面の各欄は次の意味です。
@@ -92,30 +92,30 @@ rostopic list
 以下はホスト名が `pi1` の場合です。`pi3` なら `/pi3/...` と読み替えます。
 
 ```text
-/pi1/otos_pose
+/pi1/odometry/otos
 /pi1/hmc6343_rpy
 /pi1/hmc6343_accel
 /pi1/rover_drive
-/pi1/odom
+/pi1/odometry/wheel
 ```
 
 搭載OTOSのTFフレームもローバごとに分離され、`pi1/otos_odom` から
 `pi1/otos_base_link` のような名前になります。
 
-`/pi1/odom` は車輪エンコーダから計算したオドメトリで、ライトローバーの
+`/pi1/odometry/wheel` は車輪エンコーダから計算したオドメトリで、ライトローバーの
 `pos_controller.py` が現在速度のフィードバックとして使います。OTOS由来のTFとは
 別物です。
 
 値が更新されるか確認します。停止は `Ctrl+C` です。
 
 ```bash
-rostopic echo /pi1/otos_pose
+rostopic echo /pi1/odometry/otos
 ```
 
 更新周期も確認できます。
 
 ```bash
-rostopic hz /pi1/otos_pose
+rostopic hz /pi1/odometry/otos
 rostopic hz /pi1/hmc6343_rpy
 ```
 
@@ -127,7 +127,7 @@ rostopic hz /pi1/hmc6343_rpy
 
 ```matlab
 rostopic list
-otosSub = rossubscriber('/pi1/otos_pose');
+otosSub = rossubscriber('/pi1/odometry/otos');
 otosMsg = receive(otosSub, 3)
 ```
 
@@ -139,7 +139,7 @@ otosMsg = receive(otosSub, 3)
 
 - GUIに致命的なエラーが出ていない
 - Raspberry Pi で5つの主要トピックが見える
-- `/pi1/otos_pose` と `/pi1/hmc6343_rpy` が更新される
+- `/pi1/odometry/otos` と `/pi1/hmc6343_rpy` が更新される
 - MATLABの `receive` で OTOS のメッセージを受信できる
 
 モーターを実際に回す試験は、配線、車輪方向、緊急停止方法を記載した
