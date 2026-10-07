@@ -148,6 +148,36 @@ arduino-cli board list
 USBケーブルを挿し直して再確認します。別名になった場合は
 `harada-tsubakino/launch/harada-tsubakino.launch` の `port` を合わせます。
 
+## `sudo: ホスト ... の名前解決ができません`
+
+USBシリアルの権限設定中に出ても、原因はホスト名の設定です。現在の名前と
+設定ファイルを確認します。
+
+```bash
+hostname
+cat /etc/hostname
+cat /etc/hosts
+```
+
+例えば `hostname` が `pi2` なら、`sudo nano /etc/hosts` で既存の
+`127.0.1.1` の行を `127.0.1.1 pi2` に直します。`127.0.0.1 localhost` は
+残してください。`/etc/hostname` が異なる名前なら、`sudo nano /etc/hostname` で
+こちらも `pi2` に合わせます。
+実際のホスト名が `pi2` 以外なら、その名前に読み替えます。
+
+```bash
+getent hosts "$(hostname)"
+```
+
+アドレスが表示されたら、権限設定を再実行して再起動します。
+
+```bash
+sudo usermod -aG dialout "$USER"
+sudo reboot
+```
+
+警告が出たときも `usermod` 自体は成功していた可能性がありますが、再実行できます。
+
 ## Arduinoへの書き込みに失敗する
 
 まず接続先を確認します。
@@ -166,6 +196,66 @@ arduino-cli compile --upload --port PORT \
 
 ライブラリ不足と表示された場合は [初回セットアップ手順](setup.md#5-arduino-cliを入れる)
 のライブラリ導入をやり直します。
+`SparkFun_Toolkit.h` が見つからない場合は、次を実行してから書き込みを再試行します。
+
+```bash
+arduino-cli lib install --git-url https://github.com/sparkfun/SparkFun_Toolkit.git
+```
+
+### `dfu-util: Cannot open DFU device 2341:0070 ... (LIBUSB_ERROR_ACCESS)`
+
+続けて `No DFU capable USB device available` と出る場合も、まず DFU 用 USB
+デバイスの権限を確認します。`arduino-cli board list` でシリアルポートが見えていても、
+DFU 書き込みは別の `/dev/bus/usb/` デバイスを使います。ホスト名の変更とは
+別の問題です。
+
+```bash
+id -nG
+lsusb -d 2341:0070
+```
+
+`id -nG` に `dialout` があることを確認します。なければ上の
+[`Permission denied`](#permission-denied) の手順を実行します。
+`lsusb` に `Bus 001 Device 011` と表示された場合、対応するデバイスは
+`/dev/bus/usb/001/011` です。番号は実際の表示に読み替えてください。
+
+```bash
+ls -l /dev/bus/usb/001/011
+```
+
+所有グループが `root` のままなら、次のファイルを作成します。
+
+```bash
+sudo nano /etc/udev/rules.d/70-arduino-nano-esp32-dfu.rules
+```
+
+内容は次の1行だけにします。
+
+```text
+SUBSYSTEM=="usb", ATTR{idVendor}=="2341", ATTR{idProduct}=="0070", GROUP="dialout", MODE="0660"
+```
+
+保存したらルールを読み直します。
+
+```bash
+sudo udevadm control --reload-rules
+```
+
+Nano ESP32 の USB ケーブルを抜き差ししてから、新しいデバイス番号を確認します。
+
+```bash
+lsusb -d 2341:0070
+```
+
+`Device` 番号は抜き差し後に変わるため、新しい番号で `/dev/bus/usb/` の権限を
+確認します。`crw-rw---- 1 root dialout` と表示されたら書き込みを再試行します。
+
+```bash
+cd ~/harada-tsubakino-rover-agent
+python3 update.py -a
+```
+
+参考: [Arduino の DFU エラーに関する説明](https://support.arduino.cc/hc/en-us/articles/11011849739804-dfu-util-errors-when-uploading-exit-status-74)
 
 ## トピックはあるが値が来ない
 

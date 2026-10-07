@@ -36,10 +36,31 @@ APT の取得先を一括置換しないでください。
 
 ## 2. 必要なソフトウェアを入れる
 
-端末で実行します。
+Raspberry Pi OS (Legacy) の Buster 版を使っている場合は、パッケージを
+インストールする前に Raspbian の取得先を切り替えます。まず OS を確認します。
 
 ```bash
-sudo apt update
+cat /etc/os-release
+```
+
+`VERSION_CODENAME=buster` と表示される場合だけ、次を実行します。
+Buster 以外の OS では、この切り替えは行いません。
+
+```bash
+sudo apt edit-sources
+```
+
+開いたファイルの1行目にある Raspbian の取得先を、次の1行に書き換えて保存します。
+ほかの配布元の行は変更しません。
+
+```text
+deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi
+```
+
+続けてパッケージ一覧を更新し、必要なソフトウェアを入れます。
+
+```bash
+sudo apt-get update
 sudo apt install -y git curl python-serial python3-yaml python3-pyqt5 avahi-daemon
 ```
 
@@ -137,23 +158,49 @@ arduino-cli config add board_manager.additional_urls https://espressif.github.io
 arduino-cli core update-index
 arduino-cli core install arduino:esp32
 arduino-cli config set library.enable_unsafe_install true
+arduino-cli lib install --git-url https://github.com/sparkfun/SparkFun_Toolkit.git
 arduino-cli lib install --git-url https://github.com/sparkfun/SparkFun_Qwiic_OTOS_Arduino_Library.git
 arduino-cli lib install --git-url https://github.com/sparkfun/SparkFun_HMC6343_Arduino_Library.git
 ```
 
 `unsafe` という語は、任意の Git リポジトリからライブラリを入れる機能を許可する
-という意味です。上の2つは SparkFun 公式リポジトリです。
+という意味です。上の3つは SparkFun 公式リポジトリです。
+OTOS ライブラリが必要とする `SparkFun_Toolkit.h` は、先に入れた
+`SparkFun Toolkit` に含まれます。Git URL からのライブラリ導入では依存先が
+自動で入らないため、Toolkit の行を省略しないでください。
 
-## 6. USBシリアルを使う権限を設定する
+## 6. USBシリアルとDFU書き込みの権限を設定する
 
 ```bash
 sudo usermod -aG dialout "$USER"
+```
+
+`dialout` はシリアルポートの権限です。Nano ESP32 の DFU 書き込みでは別の
+USB デバイスを使うため、次のルールも作成します。
+
+```bash
+sudo nano /etc/udev/rules.d/70-arduino-nano-esp32-dfu.rules
+```
+
+ファイルに次の1行を書いて保存します。Arduino Nano ESP32 の DFU デバイス
+`2341:0070` だけを `dialout` グループに許可します。
+
+```text
+SUBSYSTEM=="usb", ATTR{idVendor}=="2341", ATTR{idProduct}=="0070", GROUP="dialout", MODE="0660"
+```
+
+ルールを読み直して再起動します。再起動後に Nano ESP32 を USB で接続すれば、
+新しいルールが適用されます。
+
+```bash
+sudo udevadm control --reload-rules
 sudo reboot
 ```
 
-再起動したら、Nano ESP32 を USB で Raspberry Pi に接続します。接続先を確認します。
+再起動後、`id -nG` に `dialout` が含まれることと、接続先を確認します。
 
 ```bash
+id -nG
 arduino-cli board list
 ```
 
