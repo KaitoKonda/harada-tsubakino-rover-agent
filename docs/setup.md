@@ -31,13 +31,10 @@ OSのログインユーザー名は全ローバで `pi` に統一して構いま
 - `catkin build` が使える状態
 - `lightrover_ros` パッケージの導入
 
-このリポジトリは上記を置き換えません。古いメモを見て OS の配布元や
-APT の取得先を一括置換しないでください。
+### Buster の Raspbian 取得先を切り替える
 
-## 2. 必要なソフトウェアを入れる
-
-Raspberry Pi OS (Legacy) の Buster 版を使っている場合は、パッケージを
-インストールする前に Raspbian の取得先を切り替えます。まず OS を確認します。
+Raspberry Pi OS (Legacy) の Buster 版を使っている場合は、VSTONE 公式手順で
+パッケージをインストールする前に Raspbian の取得先を切り替えます。まず OS を確認します。
 
 ```bash
 cat /etc/os-release
@@ -57,10 +54,38 @@ sudo apt edit-sources
 deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi
 ```
 
-続けてパッケージ一覧を更新し、必要なソフトウェアを入れます。
+パッケージ一覧を更新してから、VSTONE 公式手順に戻ります。
 
 ```bash
 sudo apt-get update
+```
+
+### rosdep の参照先を固定する
+
+VSTONE 公式手順の ROS Melodic 導入中、`sudo rosdep init` の直後、
+`rosdep update` の前に rosdep の参照先を固定します。現在の参照先のままだと、
+公式手順で必要な Python モジュールの依存関係が適切に解決されず、
+ROS のビルドでエラーになる場合があります。2022 年 1 月 1 日より前の
+最後の [`ros/rosdistro` コミット](https://github.com/ros/rosdistro/commit/d573eab3a166e3aa3642b82260108608e5f468b4)
+（`d573eab3a166e3aa3642b82260108608e5f468b4`）を使います。
+
+```bash
+sudo sed -i 's@https://raw.githubusercontent.com/ros/rosdistro/master/@https://raw.githubusercontent.com/ros/rosdistro/d573eab3a166e3aa3642b82260108608e5f468b4/@g' /etc/ros/rosdep/sources.list.d/20-default.list
+grep rosdistro /etc/ros/rosdep/sources.list.d/20-default.list
+rosdep update
+```
+
+`grep` の結果で、`20-default.list` 内の `rosdistro` の URL がすべて上記の
+コミット ID を含むことを確認してから、公式手順の `rosdep install` 以降に戻ります。
+
+このリポジトリは上記を置き換えません。古いメモを見て OS の配布元や
+APT の取得先を一括置換しないでください。
+
+## 2. 必要なソフトウェアを入れる
+
+ローバ用のソフトウェアを入れます。
+
+```bash
 sudo apt install -y git curl python-serial python3-yaml python3-pyqt5 avahi-daemon
 ```
 
