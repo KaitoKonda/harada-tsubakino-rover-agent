@@ -7,6 +7,9 @@ from geometry_msgs.msg import Pose2D, Vector3Stamped
 
 
 class SerialSensorBridge:
+    # Sensor records are short ASCII lines; bound storage if a newline is lost.
+    MAX_SERIAL_LINE_BYTES = 256
+
     def __init__(self):
         port = rospy.get_param("~port", "/dev/ttyACM0")
         baud = rospy.get_param("~baud", 115200)
@@ -21,6 +24,8 @@ class SerialSensorBridge:
         self.imuFrame = rospy.get_param("~imu_frame", "hmc6343_link")
         self.pingInterval = rospy.Duration(pingInterval)
         self.lastPingTime = rospy.Time(0)
+        self.serialBuffer = b""
+        self.discardSerialLine = False
 
         self.posePublisher = rospy.Publisher("odometry/otos", Pose2D, queue_size=20)
         self.rpyPublisher = rospy.Publisher("hmc6343_rpy", Vector3Stamped, queue_size=10)
@@ -41,28 +46,45 @@ class SerialSensorBridge:
             self.sendPingIfNeeded()
 
             try:
-                line = self.serial.readline()
+                chunk = self.serial.readline(self.MAX_SERIAL_LINE_BYTES + 1)
             except serial.SerialException as exc:
+                self.serialBuffer = b""
+                self.discardSerialLine = True
                 rospy.logerr_throttle(2.0, "Serial read failed: %s", exc)
                 rospy.sleep(0.2)
                 continue
 
-            if not isinstance(line, str):
-                try:
-                    line = line.decode("utf-8", "replace")
-                except AttributeError:
-                    line = str(line)
+            self.handleSerialChunk(chunk)
 
-            line = line.strip()
+    def handleSerialChunk(self, chunk):
+        # readline() can return a partial record on timeout. Keep it until LF,
+        # including across empty reads, rather than parsing a truncated number.
+        if not chunk:
+            return
 
-            if not line:
-                continue
+        if self.discardSerialLine:
+            if chunk.endswith(b"\n"):
+                self.discardSerialLine = False
+            return
 
+        self.serialBuffer += chunk
+        if len(self.serialBuffer) > self.MAX_SERIAL_LINE_BYTES:
+            self.serialBuffer = b""
+            self.discardSerialLine = not chunk.endswith(b"\n")
+            rospy.logwarn_throttle(2.0, "Discarding overlong serial line")
+            return
+
+        if not chunk.endswith(b"\n"):
+            return
+
+        line = self.serialBuffer.decode("utf-8", "replace").strip()
+        self.serialBuffer = b""
+        if line:
             self.handleLine(line)
 
     def sendCommand(self, command):
         try:
-            self.serial.write(command + "\n")
+            self.serial.write((command + "\n").encode("ascii"))
             self.serial.flush()
         except serial.SerialException as exc:
             rospy.logerr_throttle(2.0, "Serial write failed: %s", exc)

@@ -266,8 +266,29 @@ rostopic hz /pi1/odometry/otos
 
 - Publisher が 0: ローバ側ノードが起動していません
 - Publisher はあるが 0 Hz: Arduino、USB、センサー初期化を確認します
-- GUIログに `Unexpected serial line`: Arduino と ROS 側の通信形式が一致していません
+- GUIログに `Unexpected serial line`: 受信行の項目数や形式が不正です。
+  例えば `OTOS,3408057,0.345459,-6.8` は方位まで含む5項目が揃っていません。
+  旧版のブリッジは読み取りタイムアウトで返った行の断片も解析していたため、
+  通信形式の不一致に限らず、受信途中の分断でもこの警告が出ます。
+  現行版は改行まで断片を保持し、256バイトを超える行は次の改行まで破棄します。
 - `OTOS` または `HMC` の初期化失敗が出る: 配線を触らず、ハードウェア担当者へ確認します
+
+この警告自体は走行ノードを停止しません。ただし、制御用PCがOTOSを状態入力に
+使っている場合、有効な計測が設定された有効期限を超えて途絶えると、PC側が
+`odometryLost` としてゼロ指令を送って終了します。警告1件だけで停止原因と
+決めず、同じ時刻の `rostopic hz /pi1/odometry/otos` とPCの実験ログを確認してください。
+`STATUS,BRIDGE_TIMEOUT` が出た場合は、ArduinoがPINGを1秒以上受信できず
+センサー配信を停止しています。USB通信とブリッジのログも確認します。
+
+修正版をPi側へ配置する際は、実験とGUIのLaunchを停止してから、更新済みの
+リポジトリで `python3 update.py -r` を実行し、GUIでLaunchし直します。
+この受信処理の修正だけならArduinoスケッチの再書き込みは不要です。
+
+ROSや実機なしで受信処理を検証するには、リポジトリ直下で次を実行します。
+
+```bash
+python3 -m unittest discover -s tests -p 'test_serial_sensor_bridge.py' -v
+```
 
 ## ローバでは見えるがMATLABでは見えない
 
