@@ -291,15 +291,46 @@ def difference(end, start):
     return None if end is None or start is None else end - start
 
 
-def create_service_proxy(rospy, name, service_class, trace_getter):
-    """Time the native URI lookup without changing ROS connection behavior.
+def create_service_proxy(rospy, name, service_class, trace_getter, persistent=False):
+    """Time URI lookup, optionally reusing a serialized persistent connection.
 
     ROS Melodic's ServiceProxy.call invokes _get_service_uri when creating a
-    transport. Delegate the actual lookup, connect, request, and cleanup to ROS.
+    transport. Delegate the actual lookup, connect, and request handling to ROS.
     The getter resolves the trace initialized after this proxy is constructed.
-    All timing state is local to the invocation, including concurrent calls.
+    Failed requests are never retried; the next call can create a new transport.
     """
+    if not isinstance(persistent, bool):
+        raise ValueError('i2c_persistent must be a boolean')
+
     class LookupTimedServiceProxy(rospy.ServiceProxy):
+        def call(self, *args, **kwargs):
+            if not self.persistent:
+                return super(LookupTimedServiceProxy, self).call(*args, **kwargs)
+            # A single TCPROS connection cannot carry overlapping requests.
+            with self._drive_call_lock:
+                try:
+                    return super(LookupTimedServiceProxy, self).call(*args, **kwargs)
+                except Exception:
+                    self._discard_transport()
+                    # A position increment may already have reached the board.
+                    # Preserve the exception and never resend this request.
+                    raise
+
+        def _discard_transport(self):
+            transport = self.transport
+            self.transport = None
+            if transport is not None:
+                try:
+                    transport.close()
+                except Exception:
+                    pass  # Cleanup must not replace the original call failure.
+
+        def close(self):
+            if not self.persistent:
+                return super(LookupTimedServiceProxy, self).close()
+            with self._drive_call_lock:
+                self._discard_transport()
+
         def _get_service_uri(self, request):
             trace = trace_getter()
             if not trace.enabled:
@@ -315,8 +346,9 @@ def create_service_proxy(rospy, name, service_class, trace_getter):
                 trace.observe('service_lookup_%s_0x%02x_s' % (request.cmd, request.addr),
                               difference(ended, started), failed=not success)
 
-    # Keep the upstream default persistent=False and all other ROS defaults.
-    return LookupTimedServiceProxy(name, service_class)
+    proxy = LookupTimedServiceProxy(name, service_class, persistent=persistent)
+    proxy._drive_call_lock = threading.Lock()
+    return proxy
 
 
 def timed_call(trace, call, args, records):

@@ -79,6 +79,7 @@ class Environment:
         self.rospy.ServiceException = type('ServiceException', (Exception,), {})
         self.rospy.ROSInterruptException = type('ROSInterruptException', (Exception,), {})
         self.lookup_calls = []
+        self.transports = []
         env = self
 
         class ServiceProxy:
@@ -87,6 +88,7 @@ class Environment:
                 self.service_class = service_class
                 self.persistent = persistent
                 self.headers = headers
+                self.transport = None
 
             def __call__(self, *args, **kwargs):
                 return self.call(*args, **kwargs)
@@ -94,11 +96,24 @@ class Environment:
             def call(self, *args, **kwargs):
                 request = types.SimpleNamespace(addr=args[0], data=args[1],
                                                 length=args[2], cmd=args[3])
-                self._get_service_uri(request)
-                return env.service(*args, **kwargs)
+                transport = self.transport
+                if transport is None:
+                    self._get_service_uri(request)
+                    transport = env.connect(request)
+                    if self.persistent:
+                        self.transport = transport
+                try:
+                    return env.service(*args, **kwargs)
+                finally:
+                    if not self.persistent:
+                        transport.close()
 
             def _get_service_uri(self, request):
                 return env.lookup(request)
+
+            def close(self):
+                if self.transport is not None:
+                    self.transport.close()
 
         self.rospy.ServiceProxy = ServiceProxy
         self.rospy.loginfo = lambda *args: None
@@ -142,6 +157,17 @@ class Environment:
     def lookup(self, request):
         self.lookup_calls.append(request)
         return 'rosrpc://pi1:12345'
+
+    def connect(self, request):
+        transport = types.SimpleNamespace(closed=False, closes=0)
+
+        def close():
+            transport.closed = True
+            transport.closes += 1
+
+        transport.close = close
+        self.transports.append(transport)
+        return transport
 
     def load(self, filename, upstream=False):
         path = os.path.join(ROOT, 'tests', 'upstream', filename) if upstream else \
@@ -376,7 +402,6 @@ class ServiceLookupTests(unittest.TestCase):
             active_trace[0] = trace
             self.assertFalse(proxy.persistent)
             self.assertIsNone(proxy.headers)
-            self.assertNotIn('call', proxy.__class__.__dict__)
             self.assertNotIn('__call__', proxy.__class__.__dict__)
             records = [] if trace.detailed else None
             for args in ((0x48, 7, 4, 'w'), (0x60, 0, 4, 'r')):
@@ -479,6 +504,213 @@ class ServiceLookupTests(unittest.TestCase):
         self.assertEqual(trace.metadata['ros_master_uri'], 'http://control-pc:11311')
 
 
+class PersistentServiceTests(unittest.TestCase):
+    def proxy(self, env, persistent=True, trace=None):
+        return create_service_proxy(env.rospy, 'wrc201_i2c', object,
+                                    lambda: trace or NullTrace(), persistent=persistent)
+
+    def test_reuses_connection_and_only_records_lookup_on_first_call(self):
+        for mode in ('full', 'minimal', 'off'):
+            env = Environment()
+            trace = (NullTrace() if mode == 'off' else
+                ServiceLookupTests().make_trace(env, mode, lambda: 0.0))
+            proxy = self.proxy(env, trace=trace)
+            args = [(0x48, 12, 4, 'w'), (0x4c, -12, 4, 'w'), (0x11, 3, 1, 'w')]
+            records = [] if trace.detailed else None
+            for request in args:
+                self.assertEqual(timed_call(trace, proxy, request, records).readData, 1)
+            self.assertTrue(proxy.persistent)
+            self.assertEqual(env.calls, args)
+            self.assertEqual(len(env.lookup_calls), 1)
+            self.assertEqual(len(env.transports), 1)
+            self.assertFalse(env.transports[0].closed)
+            if trace.enabled:
+                trace.flush_timing()
+                metrics = json.loads(trace.timing_publisher.messages[-1].data)['metrics']
+                self.assertEqual(metrics['service_lookup_w_0x48_s']['count'], 1)
+                self.assertNotIn('service_lookup_w_0x4c_s', metrics)
+                self.assertNotIn('service_lookup_w_0x11_s', metrics)
+                self.assertEqual(metrics['service_w_0x11_s']['count'], 1)
+
+    def test_failure_does_not_retry_and_next_request_reconnects(self):
+        env = Environment()
+        proxy = self.proxy(env)
+        proxy(0x48, 10, 4, 'w')
+        original = proxy.transport
+        env.fail_at = 2
+        with self.assertRaises(env.rospy.ServiceException):
+            proxy(0x4c, -10, 4, 'w')
+        self.assertEqual(env.calls, [(0x48, 10, 4, 'w'), (0x4c, -10, 4, 'w')])
+        self.assertTrue(original.closed)
+        self.assertIsNone(proxy.transport)
+        self.assertEqual(len(env.lookup_calls), 1)
+        env.fail_at = None
+        proxy(0x48, 20, 4, 'w')
+        self.assertIsNot(proxy.transport, original)
+        self.assertEqual(len(env.lookup_calls), 2)
+        self.assertEqual(len(env.calls), 3)
+        self.assertEqual(env.calls[-1], (0x48, 20, 4, 'w'))
+
+    def test_cleanup_failure_preserves_original_exception_and_clears_transport(self):
+        env = Environment()
+        proxy = self.proxy(env)
+        proxy(0x60, 0, 4, 'r')
+        original = env.rospy.ServiceException('response lost after board accepted request')
+
+        def fail(*args):
+            env.calls.append(args)
+            raise original
+
+        def fail_close():
+            raise OSError('socket already closed')
+
+        env.service = fail
+        proxy.transport.close = fail_close
+        with self.assertRaises(env.rospy.ServiceException) as error:
+            proxy(0x48, 25, 4, 'w')
+        self.assertIs(error.exception, original)
+        self.assertIsNone(proxy.transport)
+        self.assertEqual(len(env.calls), 2)
+
+    def test_initial_connect_failure_is_not_retried(self):
+        env = Environment()
+        proxy = self.proxy(env)
+        connect = env.connect
+        failure = env.rospy.ServiceException('connect failed')
+
+        def fail(request):
+            raise failure
+
+        env.connect = fail
+        with self.assertRaises(env.rospy.ServiceException) as error:
+            proxy(0x60, 0, 4, 'r')
+        self.assertIs(error.exception, failure)
+        self.assertEqual(env.calls, [])
+        self.assertEqual(len(env.lookup_calls), 1)
+        self.assertIsNone(proxy.transport)
+        env.connect = connect
+        proxy(0x64, 0, 4, 'r')
+        self.assertEqual(len(env.lookup_calls), 2)
+        self.assertEqual(env.calls, [(0x64, 0, 4, 'r')])
+
+    def test_close_discards_cached_transport_and_next_call_can_reconnect(self):
+        env = Environment()
+        proxy = self.proxy(env)
+        proxy(0x60, 0, 4, 'r')
+        transport = proxy.transport
+        proxy.close()
+        proxy.close()
+        self.assertTrue(transport.closed)
+        self.assertEqual(transport.closes, 1)
+        self.assertIsNone(proxy.transport)
+        proxy(0x64, 0, 4, 'r')
+        self.assertEqual(len(env.transports), 2)
+
+    def test_nonpersistent_reconnects_for_each_request(self):
+        env = Environment()
+        proxy = self.proxy(env, persistent=False)
+        for _ in range(3):
+            proxy(0x60, 0, 4, 'r')
+        self.assertEqual(len(env.calls), 3)
+        self.assertEqual(len(env.lookup_calls), 3)
+        self.assertEqual(len(env.transports), 3)
+        self.assertTrue(all(t.closed for t in env.transports))
+
+    def test_persistent_calls_are_serialized(self):
+        env = Environment()
+        proxy = self.proxy(env)
+        first_entered, release_first = threading.Event(), threading.Event()
+        second_attempted, second_entered = threading.Event(), threading.Event()
+        service = env.service
+        errors = []
+
+        def blocking_service(*args):
+            if args[0] == 0x60:
+                first_entered.set()
+                if not release_first.wait(2):
+                    raise AssertionError('test did not release first call')
+            else:
+                second_entered.set()
+            return service(*args)
+
+        env.service = blocking_service
+
+        def call(address):
+            try:
+                if address == 0x64:
+                    second_attempted.set()
+                proxy(address, 0, 4, 'r')
+            except Exception as error:
+                errors.append(error)
+
+        first = threading.Thread(target=call, args=(0x60,))
+        second = threading.Thread(target=call, args=(0x64,))
+        first.start()
+        try:
+            self.assertTrue(first_entered.wait(2))
+            second.start()
+            self.assertTrue(second_attempted.wait(2))
+            self.assertFalse(second_entered.wait(.05))
+        finally:
+            release_first.set()
+            first.join(3)
+            if second.ident is not None:
+                second.join(3)
+        self.assertEqual(errors, [])
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertTrue(second_entered.is_set())
+        self.assertEqual(len(env.transports), 1)
+        self.assertEqual(env.calls, [(0x60, 0, 4, 'r'), (0x64, 0, 4, 'r')])
+
+    def test_invalid_boolean_does_not_silently_enable_persistence(self):
+        env = Environment()
+        for invalid in ('false', 'true', 0, 1, None):
+            with self.assertRaises(ValueError):
+                self.proxy(env, persistent=invalid)
+
+    def test_node_startup_applies_parameter_and_records_actual_setting(self):
+        for persistent in (False, True):
+            for filename in ('controller.py', 'odometry.py'):
+                env = Environment()
+                node = env.controller() if filename == 'controller.py' else env.load(filename)
+                env.parameters['~i2c_persistent'] = persistent
+                env.rospy.init_node = lambda *args, **kwargs: None
+                env.rospy.wait_for_service = lambda *args: None
+                env.rospy.Subscriber = lambda *args: None
+                env.rospy.spin = lambda: None
+                env.rospy.Rate = lambda *args: None
+                env.rospy.is_shutdown = lambda: True
+                env.modules['tf'].TransformBroadcaster = lambda: None
+                captured = []
+
+                def create_trace(rospy, stream, metadata):
+                    captured.append(metadata)
+                    return NullTrace()
+
+                node.create_trace = create_trace
+                if filename == 'controller.py':
+                    node.pos_cntrl()
+                    proxy = node.write_msg
+                else:
+                    node.lightrover_odometry()
+                    proxy = node.read_enc
+                self.assertEqual(proxy.persistent, persistent)
+                self.assertEqual(captured[0]['service_proxy_persistent'], persistent)
+                self.assertEqual(len(env.lookup_calls), 1 if persistent else len(env.calls))
+                self.assertTrue(env.calls)
+
+    def test_failed_persistent_controller_write_does_not_issue_trigger(self):
+        env = Environment()
+        node = env.controller()
+        node.write_msg = self.proxy(env, trace=node.trace)
+        env.fail_at = 2
+        with self.assertRaises(env.rospy.ServiceException):
+            node.cb_get_rover_v(wheel(0, 0))
+        self.assertEqual([call[0] for call in env.calls], [0x48, 0x4c])
+        self.assertIsNone(node.write_msg.transport)
+
+
 class PackagingTests(unittest.TestCase):
     def test_launch_passes_string_mode_and_interval_to_both_nodes(self):
         path = os.path.join(ROOT, 'harada-tsubakino', 'launch', 'harada-tsubakino.launch')
@@ -487,10 +719,13 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(defaults['trace_mode'], '')
         self.assertEqual(defaults['trace_enabled'], 'true')
         self.assertEqual(defaults['trace_summary_interval'], '5.0')
+        self.assertEqual(defaults['i2c_persistent'], 'false')
         for node in launch.findall('.//node'):
             if node.get('type') not in ('tracedOdometry.py', 'tracedPosController.py'):
                 continue
             params = {p.get('name'): p.attrib for p in node.findall('param')}
+            self.assertEqual(params['i2c_persistent']['type'], 'bool')
+            self.assertEqual(params['i2c_persistent']['value'], '$(arg i2c_persistent)')
             self.assertEqual(params['trace_mode']['type'], 'str')
             self.assertEqual(params['trace_mode']['value'], '$(arg trace_mode)')
             self.assertEqual(params['trace_summary_interval']['value'],
@@ -694,10 +929,13 @@ class TimingModeTests(unittest.TestCase):
         try:
             trace.observe('test_s', .1)
             deadline = time.monotonic()+2
-            while not trace.timing_publisher.messages and time.monotonic()<deadline:
+            summaries = []
+            while time.monotonic()<deadline:
+                summaries = [json.loads(m.data) for m in list(trace.timing_publisher.messages)]
+                if any('test_s' in s['metrics'] for s in summaries):
+                    break
                 time.sleep(.005)
             self.assertTrue(trace.timing_publisher.messages)
-            summaries = [json.loads(m.data) for m in trace.timing_publisher.messages]
             self.assertTrue(any('test_s' in s['metrics'] for s in summaries))
             self.assertNotIn('drive_trace/controller', env.publishers)
         finally:

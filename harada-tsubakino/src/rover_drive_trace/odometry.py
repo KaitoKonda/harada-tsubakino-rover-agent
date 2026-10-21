@@ -145,7 +145,9 @@ def cal_odometry(vx, vth):
 
 def lightrover_odometry():
         rospy.init_node('wrc201_odometry', anonymous=True)
-        global trace
+        global trace, read_enc
+        read_enc = create_service_proxy(rospy, 'wrc201_i2c', Wrc201Msg,
+            lambda: trace, persistent=rospy.get_param('~i2c_persistent', False))
         trace = create_trace(rospy, 'wheel', dict(
             upstream_blob='8fd864156607c2a2a87455a27bea5b210ef1f1a7',
             wheel_order=['motor0', 'motor1'],
@@ -153,7 +155,7 @@ def lightrover_odometry():
             encoder_counts_per_turn=ENC_COUNTS_PER_TURN,
             encoder_counts_per_m=ENC_PER_M, track_width_m=2*ROVER_D,
             requested_rate_hz=100, diff_count_limit=DIFF_COUNT_LIMIT,
-            service_proxy_persistent=False,
+            service_proxy_persistent=read_enc.persistent,
             service_lookup_timing='ServiceProxy._get_service_uri',
             additional_i2c_reads=False))
         rospy.wait_for_service('wrc201_i2c')

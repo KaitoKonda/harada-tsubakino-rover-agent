@@ -148,7 +148,9 @@ def init_write(*args):
 
 def pos_cntrl():
         rospy.init_node('pos_controller', anonymous=True)
-        global trace
+        global trace, write_msg
+        write_msg = create_service_proxy(rospy, 'wrc201_i2c', Wrc201Msg,
+            lambda: trace, persistent=rospy.get_param('~i2c_persistent', False))
         trace = create_trace(rospy, 'controller', dict(
             upstream_blob='618bb67db1044e75fbde482903250f14aa94adb9',
             motor_upstream_blob='599c2eedeec64bc68008ad2aedce1f45e3dfe8d3',
@@ -156,7 +158,7 @@ def pos_cntrl():
             position_p_gain=[128, 128], punch=[2500, 2500],
             motor_parameters=list(motor_controller.motor_param),
             encoder_counts_per_m=motor_controller.ENC_PER_M,
-            service_proxy_persistent=False,
+            service_proxy_persistent=write_msg.persistent,
             service_lookup_timing='ServiceProxy._get_service_uri',
             additional_i2c_reads=False))
         rospy.wait_for_service('wrc201_i2c')

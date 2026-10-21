@@ -66,6 +66,11 @@ GUIのLaunchを起動し直す。既定では計測版が選ばれる。トピ�
 最初・最後の値だけを一定量のメモリで集計する。`full` も同じ計測点・同じ集計方法を使う。
 `off` は比較用の内部時間も取得しない。モード変更はLaunchを停止して起動し直す。
 
+サービス接続方式は `i2c_persistent:=false`（既定）で従来の非永続接続、
+`i2c_persistent:=true` で永続接続を選ぶ。ログのモードとは独立で、
+`instrumented_drive:=true` の計測版ノードに適用する。
+メーカー版を選ぶ `instrumented_drive:=false` ではこの引数は適用されない。
+
 手動起動例（既存のROS環境設定後）:
 
 ```bash
@@ -94,7 +99,7 @@ python3 update.py -r
 
 `main` 側のlaunchには検証用の起動引数がないため、GUIのArgsから
 `instrumented_drive:=...`、`trace_enabled:=...`、`trace_mode:=...`、
-`trace_queue_capacity:=...`、`trace_publish_hz:=...`、`trace_summary_interval:=...`
+`trace_queue_capacity:=...`、`trace_publish_hz:=...`、`trace_summary_interval:=...`、`i2c_persistent:=...`
 を外す。ホスト名の `group:=...` は残す。
 Gitのブランチを戻すだけでは既にコピー済みのROSパッケージは切り替わらない。
 
@@ -234,18 +239,18 @@ PC側は従来の実験と `DriveTraceRecorder` のままでよい。指令を
 `controller_timing` / `wheel_timing` に含まれる。
 
 1. 実験・Launchを停止し、このブランチを更新して `python3 update.py -r` でPiへ配置する。
-2. PCの記録器を開始し、GUIのArgsを `group:=pi1 trace_mode:=minimal` としてLaunchを起動し直す。
+2. PCの記録器を開始し、GUIのArgsを `group:=pi1 trace_mode:=minimal i2c_persistent:=false` としてLaunchを起動し直す。
 3. 従来どおりPCの実験を開始し、ゼロ指令のまま約80秒記録する。
    最初の約10秒（集計連番1・2）を除いて、完全な集計窓を60秒分以上確保する。
 4. 実験を停止した後に記録器を閉じる。起動条件とネットワークを揃えて2～3回取得すると、
    試行間の揺らぎも確認できる。
 
 `trace_mode=full/minimal` のどちらも検索を測り、`off` は検索の追加計測も行わない。
-今回の変更は最初の切り分け段階に限る。サービスの接続方式は従来の非永続接続のまま、
-メーカーのI2Cサーバー・ROS本体は編集しない。追加のサービス検索・I2C要求・再試行も行わない。
+上記は従来の非永続接続で検索時間を測る手順。メーカーのI2Cサーバー・ROS本体は編集しない。
+追加のサービス検索・I2C要求・再試行も行わない。
 
 メタデータの `service_lookup_timing=ServiceProxy._get_service_uri` が計測対応版の目印。
-`service_proxy_persistent=false` と `ros_master_uri`（Piプロセスの環境変数）も記録する。
+`service_proxy_persistent`（実際の永続接続設定）と `ros_master_uri`（Piプロセスの環境変数）も記録する。
 これで、実際に指定されていたmasterの接続先をログから確認できる。
 
 ROS Melodicの `ServiceProxy` をこちらのパッケージ内で継承し、既存の `_get_service_uri`
@@ -267,6 +272,39 @@ Pi側のmaster指定がPCなら、この検索はPCとの通信を伴う。
 検索側の `failures` はその検索処理が例外になった件数であり、検索後の接続・I2C処理の失敗は
 既存のサービス全体の `failures` に記録する。`wait_for_service` による起動時の待機は対象外。
 検索の集計処理自体の小さな負荷は、既存のサービス全体時間にも含まれる。
+
+## 永続接続との比較
+
+Piへこのブランチを更新・再配置し、実験とLaunchを停止してから行う。
+非永続接続の記録と同じPC側の実験・記録器を使い、以下のArgsでLaunchを起動する。
+
+```text
+group:=pi1 trace_mode:=minimal i2c_persistent:=true
+```
+
+ゼロ指令を従来と同じ周期で送り、約80秒記録する。
+最初の約10秒を除き、完全な集計窓を60秒分以上比較する。
+比較条件へ戻す場合は `i2c_persistent:=false` に変え、必ずLaunchを起動し直す。
+両条件とも新しく起動して、古い車輪odomの滞留を持ち越さない。
+PC記録器・Arduino・メーカーのパッケージを更新する必要はない。
+
+メタデータの `service_proxy_persistent=true/false` で実際の条件を確認する。
+制御側と車輪側はそれぞれ専用のサービスクライアントを持つ。
+永続接続では初回の検索・接続後に同じ通信路を再利用するため、通常の継続区間に
+`service_lookup_*` がないのは正常。この場合は検索が0件であり、検索時間0秒のサンプルではない。
+起動時の初期化要求で接続することもあるため、最初の検索アドレスが走行中のアドレスとは限らない。
+
+既存の `service_*` の平均・最大・件数・失敗数、`control_period_s`、
+`wheel_calculation_dt_s`、`wheel_odom_age_at_start_s` を比較する。
+永続接続は毎回の検索と接続確立の両方を省くため、改善の全量を検索だけの効果とは呼ばない。
+
+同じクライアントへの呼び出しは永続接続時のみロックで直列化し、応答の取り違えを防ぐ。
+例外になった呼び出しは元の例外を返し、その接続を閉じて保存済み通信路を破棄する。
+**失敗した要求は自動再送しない。次の通常の呼び出しがあったときに、検索・接続を作り直す。**
+応答が失われただけで位置加算が適用済みの場合、再送すると二重加算になるため。
+閉じる処理の失敗も元の呼び出し例外を置き換えない。
+失敗後の制御・オドメトリの例外処理、ゲイン、計算式、I2C要求の値・順序は従来どおり。
+今回はサービス呼び出しのタイムアウトや追加の停止指令・復旧時の初期化書き込みは追加しない。
 
 ## 時刻と欠落
 
@@ -306,7 +344,8 @@ python3 -m unittest discover -s tests -v
 
 固定したメーカー版へ同じ指令・エンコーダ値・計算時刻を与え、出力・小数繰越・位置計算・
 I2C要求列を3モードで比較する。full/minimalの共通集計、従来オプションとの互換性、
-サービス検索の時間・失敗・同時呼び出し、サービス失敗、キュー満杯と送信失敗も検証する。
+サービス検索の時間・失敗・同時呼び出し、永続接続の再利用・直列化・失敗後の次回接続、
+ノード起動時の設定とメタデータ、サービス失敗、キュー満杯と送信失敗も検証する。
 Pi上のcatkinビルド、Python 2 / ROS実行、実機での周期・負荷の比較は別途必要。
 
 PC記録ツールも、ROS接続を作らないMATLABテストで検証できる。
