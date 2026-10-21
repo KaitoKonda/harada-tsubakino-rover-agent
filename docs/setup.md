@@ -98,16 +98,21 @@ sudo apt install -y git curl python-serial python3-yaml python3-pyqt5 avahi-daem
 cd ~
 git clone https://github.com/KaitoKonda/harada-tsubakino-rover-agent.git
 cd ~/harada-tsubakino-rover-agent
+git config --local core.filemode false
 ```
+
+`core.filemode false` は、このリポジトリで実行権限だけの差分を無視する設定です。
+ファイル内容の変更は引き続き検出されます。ローバごとに一度設定すれば保持されます。
 
 既にフォルダがある場合は `git clone` を繰り返さず、次で更新します。
 
 ```bash
 cd ~/harada-tsubakino-rover-agent
+git config --local core.filemode false
 git pull --ff-only
 ```
 
-手元の変更があると `git pull --ff-only` は停止します。その場合は変更を消さず、
+更新対象と重なる手元の変更があると `git pull --ff-only` は停止します。その場合は変更を消さず、
 [トラブル対応](troubleshooting.md)を確認してください。
 
 ## 4. ROSパッケージと起動GUIを配置する
@@ -137,8 +142,11 @@ python3 update.py -r -g
 
 ```bash
 cd ~/harada-tsubakino-rover-agent
+git config --local core.filemode false
 git status --short
 ```
+
+上の設定で、旧版の `update.py` などが付けた実行権限だけの差分は表示されなくなります。
 
 `git status --short` が何も表示しないことを確認します。ファイル名が表示された場合は、
 ローバ上に未保存の変更があります。そこで止めて、変更を消す操作はせず、

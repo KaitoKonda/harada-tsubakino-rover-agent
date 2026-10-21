@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -21,7 +20,7 @@ scriptMap = {
 def parseArgs() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Apply execute permission to selected shell scripts and run them. "
+            "Run selected shell scripts with bash. "
             "If no option is given, all scripts are run."
         )
     )
@@ -36,17 +35,11 @@ def selectedKeys(args: argparse.Namespace) -> list[str]:
     return keys or list(scriptMap.keys())
 
 
-def ensureExecutable(scriptPath: Path) -> None:
-    currentMode = scriptPath.stat().st_mode
-    scriptPath.chmod(currentMode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-
 def runScript(scriptPath: Path) -> int:
     if not scriptPath.exists():
         print(f"Error: script not found: {scriptPath}", file=sys.stderr)
         return 1
 
-    ensureExecutable(scriptPath)
     print(f"Running: {scriptPath.name}")
 
     completed = subprocess.run(

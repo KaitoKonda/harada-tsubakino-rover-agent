@@ -305,7 +305,7 @@ python3 -m unittest discover -s tests -p 'test_serial_sensor_bridge.py' -v
 
 ## 更新できない／手元の変更がある
 
-`git pull --ff-only` が停止した場合、次で変更内容だけを確認します。
+`git pull --ff-only` が停止した場合、まず次で変更内容を確認します。
 
 ```bash
 cd ~/harada-tsubakino-rover-agent
@@ -313,8 +313,25 @@ git status
 git diff
 ```
 
+`old mode 100644` / `new mode 100755` だけが表示される場合は、実行権限の差分です。
+旧版の `update.py` は更新用 `.sh` に実行権限を付けていたため、更新するたびに
+この差分が発生していました。現在は `bash` で直接実行し、リポジトリ内の権限を変更しません。
+ROSノードやGUIの配置先には、引き続き必要な実行権限を付けます。
+
+ローバ上のこのリポジトリだけで権限差分を無視するには、次を一度実行します。
+ファイル内容やステージ済みの変更は引き続き検出されます。
+
+```bash
+git config --local core.filemode false
+git status --short
+```
+
+何も表示されなくなった場合は、`git pull --ff-only` を再実行できます。
+まだ変更が表示される場合は `git diff` と `git diff --cached` で内容を確認します。
+`--ff-only` は履歴が分岐している場合にも停止するため、その場合は権限設定では解消しません。
+
 `git reset --hard` は手元の変更を消すため、内容を確認せず実行しないでください。
-判断できない場合は、上の2つの結果を添えて管理者へ相談します。
+判断できない場合は、エラー全文と上の確認結果を添えて管理者へ相談します。
 
 ## 相談時に渡すもの
 
