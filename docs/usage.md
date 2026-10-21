@@ -103,8 +103,9 @@ rostopic list
 `pi1/otos_base_link` のような名前になります。
 
 `/pi1/odometry/wheel` は車輪エンコーダから計算したオドメトリで、ライトローバーの
-`pos_controller.py` が現在速度のフィードバックとして使います。OTOS由来のTFとは
-別物です。
+位置増分を更新する処理のきっかけとして使います。既定ではこのパッケージの
+計測版 `tracedPosController.py` が動きます。OTOS由来のTFとは別物です。
+内部ログの保存・メーカー版への切替は [内部ログの取得](drive-trace.md) を参照してください。
 
 値が更新されるか確認します。停止は `Ctrl+C` です。
 

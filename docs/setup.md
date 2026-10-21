@@ -94,9 +94,13 @@ sudo apt install -y git curl python-serial python3-yaml python3-pyqt5 avahi-daem
 
 ## 3. このリポジトリを取得する
 
+以下は通常運用の `main` を取得する手順です。内部ログの実機検証では
+`feature/drive-trace` を使うため、[内部ログの配置手順](drive-trace.md#配置起動)で
+ブランチを選んでから、手順4以降へ進んでください。
+
 ```bash
 cd ~
-git clone https://github.com/KaitoKonda/harada-tsubakino-rover-agent.git
+git clone --branch main https://github.com/KaitoKonda/harada-tsubakino-rover-agent.git
 cd ~/harada-tsubakino-rover-agent
 git config --local core.filemode false
 ```
@@ -104,16 +108,16 @@ git config --local core.filemode false
 `core.filemode false` は、このリポジトリで実行権限だけの差分を無視する設定です。
 ファイル内容の変更は引き続き検出されます。ローバごとに一度設定すれば保持されます。
 
-既にフォルダがある場合は `git clone` を繰り返さず、次で更新します。
+既にフォルダがある場合は `git clone` を繰り返さず、次の「既存ローバを更新する」の
+手順を使います。ブランチ切替前に実験とLaunchを停止し、未コミットの変更を確認します。
 
 ```bash
 cd ~/harada-tsubakino-rover-agent
 git config --local core.filemode false
-git pull --ff-only
+git status --short
 ```
 
-更新対象と重なる手元の変更があると `git pull --ff-only` は停止します。その場合は変更を消さず、
-[トラブル対応](troubleshooting.md)を確認してください。
+変更が表示された場合は消さずに止め、[トラブル対応](troubleshooting.md)を確認してください。
 
 ## 4. ROSパッケージと起動GUIを配置する
 
@@ -135,7 +139,10 @@ python3 update.py -r -g
 
 最後に赤い `Error` が出なければ次へ進みます。
 
-### 既存ローバを最新版へ更新する
+### 既存ローバを更新する
+
+通常運用の `main` を更新する手順です。内部ログを検証する場合は、
+[検証ブランチの配置・更新手順](drive-trace.md#配置起動)を使ってください。
 
 既にセットアップ済みのローバでは、GUIの `Stop` を押して終了してから、次の順番で
 更新します。
@@ -149,15 +156,20 @@ git status --short
 上の設定で、旧版の `update.py` などが付けた実行権限だけの差分は表示されなくなります。
 
 `git status --short` が何も表示しないことを確認します。ファイル名が表示された場合は、
-ローバ上に未保存の変更があります。そこで止めて、変更を消す操作はせず、
+ローバ上に未コミットの変更があります。そこで止めて、変更を消す操作はせず、
 [トラブル対応](troubleshooting.md#更新できない手元の変更がある)を確認してください。
 
 何も表示されなかった場合だけ、続けて次を実行します。
 
 ```bash
-git pull --ff-only
+git fetch origin
+git checkout main
+git pull --ff-only origin main
 python3 update.py -r -g
 ```
+
+各コマンドが成功した場合だけ次へ進みます。検証ブランチから `main` へ戻す場合は、
+[mainへ戻す手順](drive-trace.md#mainの配置へ戻す)に従い、GUIの検証用起動引数も外してください。
 
 `-r` はROSパッケージの配置とビルド、`-g` は起動GUIとデスクトップアイコンの更新を
 行います。正常な `~/ROSGUILauncher/launcherConfig.yaml` と、そこに設定した制御用PCの

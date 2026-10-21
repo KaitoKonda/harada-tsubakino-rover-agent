@@ -8,6 +8,7 @@ project(harada-tsubakino)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  lightrover_ros
   geometry_msgs
   nav_msgs
   rospy
@@ -22,7 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-# catkin_python_setup()
+catkin_python_setup()
 
 ################################################
 ## Declare ROS messages, services and actions ##
@@ -107,7 +108,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES harada-tsubakino
- CATKIN_DEPENDS geometry_msgs nav_msgs rospy std_msgs tf
+ CATKIN_DEPENDS geometry_msgs lightrover_ros nav_msgs rospy std_msgs tf
 #  DEPENDS system_lib
 )
 
@@ -163,8 +164,12 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   scripts/serialSensorBridge.py
+  scripts/tracedPosController.py
+  scripts/tracedOdometry.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+
+install(DIRECTORY launch/ DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch)
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html
