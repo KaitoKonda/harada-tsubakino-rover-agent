@@ -16,6 +16,7 @@ Arduino Nano ESP32 から ROS に渡すための、ローバ側リポジトリ�
 時間集計にはROSサービスの検索時間も含まれます。PCでゼロ指令を送って取得する
 [切り分け手順](docs/drive-trace.md#サービス検索時間の切り分け)も用意しています。
 永続接続が既定です。`i2c_persistent:=false` で[従来方式と比較](docs/drive-trace.md#永続接続との比較)できます。
+制御側の車輪odom購読は `queue_size=1` です。[滞留対策の確認手順](docs/drive-trace.md#車輪odomの滞留対策の確認)に従って実機ログで確認します。
 
 ## このリポジトリが担当する範囲
 

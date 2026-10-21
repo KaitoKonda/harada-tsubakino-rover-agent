@@ -47,6 +47,7 @@ latest_command = None
 last_command_at = None
 cycle_seq = 0
 previous_cycle_at = None
+WHEEL_ODOM_QUEUE_SIZE = 1
 
 def cb_get_rover_v(data):
         global linear_x,angular_z,current_v,ROVER_D,target_rover_v
@@ -160,6 +161,7 @@ def pos_cntrl():
             encoder_counts_per_m=motor_controller.ENC_PER_M,
             service_proxy_persistent=write_msg.persistent,
             service_lookup_timing='ServiceProxy._get_service_uri',
+            wheel_odom_queue_size=WHEEL_ODOM_QUEUE_SIZE,
             additional_i2c_reads=False))
         rospy.wait_for_service('wrc201_i2c')
 
@@ -173,7 +175,8 @@ def pos_cntrl():
         init_write(MU16_FB_PCH1,0x09C4,2,'w')    #モータ1最低出力値設定
         init_write(MU8_O_EN,0x03,1,'w')          #モータ出力許可
 
-        rospy.Subscriber('odom',Odometry,cb_get_rover_v)
+        # Discard older messages in a received batch when control falls behind.
+        rospy.Subscriber('odom',Odometry,cb_get_rover_v,queue_size=WHEEL_ODOM_QUEUE_SIZE)
         rospy.Subscriber('rover_drive',Twist,cb_set_target_v)
 
         rospy.spin()

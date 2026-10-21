@@ -247,7 +247,7 @@ class DriveRegressionTests(unittest.TestCase):
             node = env.controller(upstream=upstream)
             env.rospy.init_node = lambda *args, **kwargs: None
             env.rospy.wait_for_service = lambda *args: None
-            env.rospy.Subscriber = lambda *args: None
+            env.rospy.Subscriber = lambda *args, **kwargs: None
             env.rospy.spin = lambda: None
             node.create_trace = lambda *args: node.trace
             node.pos_cntrl()
@@ -679,7 +679,8 @@ class PersistentServiceTests(unittest.TestCase):
                     env.parameters['~i2c_persistent'] = setting
                 env.rospy.init_node = lambda *args, **kwargs: None
                 env.rospy.wait_for_service = lambda *args: None
-                env.rospy.Subscriber = lambda *args: None
+                subscriptions = []
+                env.rospy.Subscriber = lambda *args, **kwargs: subscriptions.append((args, kwargs))
                 env.rospy.spin = lambda: None
                 env.rospy.Rate = lambda *args: None
                 env.rospy.is_shutdown = lambda: True
@@ -699,6 +700,12 @@ class PersistentServiceTests(unittest.TestCase):
                     proxy = node.read_enc
                 self.assertEqual(proxy.persistent, persistent)
                 self.assertEqual(captured[0]['service_proxy_persistent'], persistent)
+                if filename == 'controller.py':
+                    odom = [(args, kwargs) for args, kwargs in subscriptions if args[0] == 'odom']
+                    self.assertEqual(len(odom), 1)
+                    self.assertIs(odom[0][0][2], node.cb_get_rover_v)
+                    self.assertEqual(odom[0][1]['queue_size'], 1)
+                    self.assertEqual(captured[0]['wheel_odom_queue_size'], odom[0][1]['queue_size'])
                 self.assertEqual(len(env.lookup_calls), 1 if persistent else len(env.calls))
                 self.assertTrue(env.calls)
 
