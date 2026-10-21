@@ -706,6 +706,8 @@ class PersistentServiceTests(unittest.TestCase):
                     self.assertIs(odom[0][0][2], node.cb_get_rover_v)
                     self.assertEqual(odom[0][1]['queue_size'], 1)
                     self.assertEqual(captured[0]['wheel_odom_queue_size'], odom[0][1]['queue_size'])
+                    self.assertIs(odom[0][1]['tcp_nodelay'], True)
+                    self.assertIs(captured[0]['wheel_odom_tcp_nodelay'], odom[0][1]['tcp_nodelay'])
                 self.assertEqual(len(env.lookup_calls), 1 if persistent else len(env.calls))
                 self.assertTrue(env.calls)
 

@@ -33,6 +33,9 @@
 - 制御側の車輪odom購読に `queue_size=1` を指定し、処理が遅れたときに
   受信バッチ内の古いメッセージを間引く。受信コールバック内で制御する構成と
   車輪odomの生成・配信処理は維持する。TCP受信バッファを含む滞留の解消は実機で確認する。
+- 同じ車輪odom購読に `tcp_nodelay=True` を指定し、配信側とのTCPROS接続で
+  Nagleアルゴリズムを無効にするよう要求する。制御周期への効果は実機ログで確認する。
+  メタデータに `wheel_odom_tcp_nodelay` を記録する。
 
 MIT License (upstream package declaration)
 
