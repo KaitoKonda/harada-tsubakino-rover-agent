@@ -56,7 +56,13 @@ Raspberry Pi のデスクトップにある `rosGuiLauncher.desktop` をダブ�
 
 ```text
 Opened serial port /dev/ttyACM0 at 115200 baud
+Serial sensor stream healthy on /dev/ttyACM0: valid OTOS and HMC received
 ```
+
+`Opened serial port` はUSBポートを開けたという意味です。`Serial sensor stream healthy`
+が出ると、有効なOTOS・HMCデータの受信まで確認できています。
+無受信・センサーの配信停止・データ形式異常は同じGUIのLaunchログに警告・エラーで表示します。
+表示の意味は[トピックはあるが値が来ない](troubleshooting.md#トピックはあるが値が来ない)を参照してください。
 
 ### GUIが開かない場合の手動起動
 

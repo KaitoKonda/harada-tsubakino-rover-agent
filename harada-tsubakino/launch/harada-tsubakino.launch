@@ -43,7 +43,8 @@
       <param name="trace_queue_capacity" value="$(arg trace_queue_capacity)" />
       <param name="trace_publish_hz" value="$(arg trace_publish_hz)" />
     </node>
-    <node pkg="harada-tsubakino" type="serialSensorBridge.py" name="serial_sensor_bridge">
+    <node pkg="harada-tsubakino" type="serialSensorBridge.py" name="serial_sensor_bridge" output="screen">
+      <env name="PYTHONUNBUFFERED" value="1" />
       <param name="port" value="/dev/ttyACM0" />
       <param name="baud" value="115200" />
       <param name="otos_odom_frame" value="$(arg group)/otos_odom" />

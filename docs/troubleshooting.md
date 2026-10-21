@@ -259,6 +259,38 @@ python3 update.py -a
 
 ## トピックはあるが値が来ない
 
+GUIのLaunchログで、まずセンサーブリッジの表示を確認します。
+ブリッジの出力は `output="screen"` と非バッファ出力でGUIへ渡します。
+
+| ログの目印 | 意味 |
+| --- | --- |
+| `Opened serial port` | ポートを開けた。センサー受信の確認とは別 |
+| `Serial sensor stream healthy` | 有効なOTOS・HMCデータを受信。途絶後の復帰時にも表示 |
+| `Serial receive timeout` | シリアル受信バイトが途絶。ポート名・経過秒数・受信件数・直近STATUSを併記 |
+| `OTOS receive timeout` / `HMC receive timeout` | バイトは来ているが、該当センサーの有効データが途絶 |
+| `Arduino sensor initialization error` | `OTOS_INIT_FAILED` / `HMC_INIT_FAILED` / `NO_SENSORS_READY` |
+| `Arduino streaming warning` | `BRIDGE_TIMEOUT` / `STREAM_OFF` / `UNKNOWN_COMMAND` |
+| `Arduino error` | Arduinoからの `ERROR,...` 行 |
+| `Failed to parse line` / `Unexpected serial line` / `Discarding overlong serial line` | 不正な値・形式・長すぎる行 |
+| `Serial read failed` / `Serial write failed` | USBシリアルの読み書き例外。書き込みエラーは送信コマンドも表示 |
+
+監視はシリアルの読み書きと別スレッドで行い、ROS時刻とは独立した単調時計を使います。
+既定ではポートを開けてから5秒間の起動猶予を設け、以降は1秒間の無受信を警告します。
+起動猶予中でも一度正常な両センサー受信を確認した後は、1秒の監視へ移ります。
+同じ受信警告は5秒ごとに繰り返し、復帰も表示します。
+STATUSや不正な行だけが届いても、センサーの正常受信とは扱いません。
+NaN・無限大を含むセンサー行は警告して破棄し、ROSへ配信しません。
+ローバーが静止していて位置が変わらないこと自体は異常と判定しません。
+
+受信間隔はブリッジのprivateパラメーター `receive_timeout`（既定1秒）、
+`receive_startup_grace`（5秒）、`receive_warning_interval`（5秒）で起動時に設定できます。
+今回の監視は状態をログに出す処理です。受信停止時の自動リセット・自動再接続・追加RESETは行いません。
+
+control-stationが接続待ちで繰り返しタイムアウトし、`Serial receive timeout` も出る場合は、
+PCとのROS接続だけでなく、Arduino・USB・ブリッジの入出力停止も確認します。
+Arduinoのリセットで復帰させる場合は実験・Launchを停止し、リセット後にLaunchを起動し直します。
+再起動したArduinoは配信停止状態で始まるため、ブリッジからのSTARTが必要です。
+
 ```bash
 rostopic info /pi1/odometry/otos
 rostopic hz /pi1/odometry/otos
@@ -282,7 +314,7 @@ rostopic hz /pi1/odometry/otos
 
 修正版をPi側へ配置する際は、実験とGUIのLaunchを停止してから、更新済みの
 リポジトリで `python3 update.py -r` を実行し、GUIでLaunchし直します。
-この受信処理の修正だけならArduinoスケッチの再書き込みは不要です。
+この受信処理の修正だけならArduinoスケッチの再書き込み・GUIアプリ自体の再配置は不要です。
 
 ROSや実機なしで受信処理を検証するには、リポジトリ直下で次を実行します。
 
