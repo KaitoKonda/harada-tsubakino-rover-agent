@@ -111,6 +111,7 @@ class TracePublisher(object):
         self.metadata = dict(metadata)
         self.metadata['trace_mode'] = self.mode
         self.metadata['summary_interval_s'] = self.summary_interval
+        self.metadata['ros_master_uri'] = os.environ.get('ROS_MASTER_URI')
         self.metadata['clock'] = 'CLOCK_MONOTONIC seconds, shared within one Pi boot'
         self.metadata['source_sha256'] = source_hashes()
         self.metadata['boot_id'] = boot_id()
@@ -288,6 +289,34 @@ def create_trace(rospy, stream, metadata):
 
 def difference(end, start):
     return None if end is None or start is None else end - start
+
+
+def create_service_proxy(rospy, name, service_class, trace_getter):
+    """Time the native URI lookup without changing ROS connection behavior.
+
+    ROS Melodic's ServiceProxy.call invokes _get_service_uri when creating a
+    transport. Delegate the actual lookup, connect, request, and cleanup to ROS.
+    The getter resolves the trace initialized after this proxy is constructed.
+    All timing state is local to the invocation, including concurrent calls.
+    """
+    class LookupTimedServiceProxy(rospy.ServiceProxy):
+        def _get_service_uri(self, request):
+            trace = trace_getter()
+            if not trace.enabled:
+                return super(LookupTimedServiceProxy, self)._get_service_uri(request)
+            started = trace.now()
+            success = False
+            try:
+                uri = super(LookupTimedServiceProxy, self)._get_service_uri(request)
+                success = True
+                return uri
+            finally:
+                ended = trace.now()
+                trace.observe('service_lookup_%s_0x%02x_s' % (request.cmd, request.addr),
+                              difference(ended, started), failed=not success)
+
+    # Keep the upstream default persistent=False and all other ROS defaults.
+    return LookupTimedServiceProxy(name, service_class)
 
 
 def timed_call(trace, call, args, records):

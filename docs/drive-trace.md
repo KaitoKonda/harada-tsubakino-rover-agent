@@ -207,6 +207,9 @@ full/minimalで記録方法を変える必要はない。PC側の記録器もこ
 - `wheel_sample_duration_s`, `wheel_calculation_dt_s`: 車輪の取得・計算時間と、元の計算で使う時間差。
 - `service_w_0x48_s`, `service_w_0x4c_s`, `service_w_0x11_s`: 既存3回の書き込みサービス往復。
 - `service_r_0x60_s`, `service_r_0x64_s`: 既存2回の読み取りサービス往復。
+- `service_lookup_w_0x48_s`, `service_lookup_w_0x4c_s`, `service_lookup_w_0x11_s`:
+  各書き込みでのROSサービスURI検索時間。起動時の他アドレスも同じ命名で集計する。
+- `service_lookup_r_0x60_s`, `service_lookup_r_0x64_s`: 各読み取りでの同検索時間。
 
 値の単位は秒。集計は送信ごとにリセットする。処理が区間をまたぐ場合は、値を集計した区間に
 件数を含める。処理停止中は空の集計が届く場合もあり、0件を所要時間0秒と解釈しない。
@@ -222,6 +225,48 @@ full/minimalで記録方法を変える必要はない。PC側の記録器もこ
 既定の集計間隔は5秒。`trace_summary_interval:=5.0` で指定でき、両条件で同じ値を使う。
 `minimal` でも計測・小さな集計・低頻度のメタデータ配信の負荷は残る。
 サービス往復時間だけではサーバー待ちとI2C実通信を分離できない点は、fullと同じ。
+
+## サービス検索時間の切り分け
+
+PC側は従来の実験と `DriveTraceRecorder` のままでよい。指令を
+`linear.x=0`、`angular.z=0` に保ち、従来と同じ周期で送信し続ける。
+記録器の更新や新しいトピックの購読は不要。新しい値は既存の
+`controller_timing` / `wheel_timing` に含まれる。
+
+1. 実験・Launchを停止し、このブランチを更新して `python3 update.py -r` でPiへ配置する。
+2. PCの記録器を開始し、GUIのArgsを `group:=pi1 trace_mode:=minimal` としてLaunchを起動し直す。
+3. 従来どおりPCの実験を開始し、ゼロ指令のまま約80秒記録する。
+   最初の約10秒（集計連番1・2）を除いて、完全な集計窓を60秒分以上確保する。
+4. 実験を停止した後に記録器を閉じる。起動条件とネットワークを揃えて2～3回取得すると、
+   試行間の揺らぎも確認できる。
+
+`trace_mode=full/minimal` のどちらも検索を測り、`off` は検索の追加計測も行わない。
+今回の変更は最初の切り分け段階に限る。サービスの接続方式は従来の非永続接続のまま、
+メーカーのI2Cサーバー・ROS本体は編集しない。追加のサービス検索・I2C要求・再試行も行わない。
+
+メタデータの `service_lookup_timing=ServiceProxy._get_service_uri` が計測対応版の目印。
+`service_proxy_persistent=false` と `ros_master_uri`（Piプロセスの環境変数）も記録する。
+これで、実際に指定されていたmasterの接続先をログから確認できる。
+
+ROS Melodicの `ServiceProxy` をこちらのパッケージ内で継承し、既存の `_get_service_uri`
+の前後だけを単調時計で測る。検索・接続・送受信・切断はROSの元の処理へ委ねる。
+この検索処理には要求の検査、masterへの問い合わせなどを含み、TCPROSサービス接続の確立と
+I2C処理は含まない。非永続接続では通常、各サービス呼び出しでこの検索が行われる。
+Pi側のmaster指定がPCなら、この検索はPCとの通信を伴う。
+実装根拠: [ROS MelodicのServiceProxy](https://github.com/ros/ros_comm/blob/melodic-devel/clients/rospy/src/rospy/impl/tcpros_service.py)。
+
+同じ操作・アドレスについて `service_lookup_*` と既存の `service_*` の平均・件数を比較する。
+検索時間が全体時間の大部分なら、master問い合わせの寄与が大きい。
+検索が短く全体が長いなら、接続確立・送受信・サーバー内処理等を次に切り分ける。
+全体から検索を引いた値だけで、通信・I2Cのどちらに時間がかかったかは断定しない。
+
+検索の集計は検索終了時、全体の集計はサービス呼び出し終了時に行う。
+窓をまたぐと件数がずれることがあるので、複数の完全な窓を合算し、件数と `failures` を確認する。
+平均の差は傾向を見るための値であり、1件ごとに対応付けた厳密な差ではない。
+最大値同士を引いて残り時間を算出しない。
+検索側の `failures` はその検索処理が例外になった件数であり、検索後の接続・I2C処理の失敗は
+既存のサービス全体の `failures` に記録する。`wait_for_service` による起動時の待機は対象外。
+検索の集計処理自体の小さな負荷は、既存のサービス全体時間にも含まれる。
 
 ## 時刻と欠落
 
@@ -261,7 +306,7 @@ python3 -m unittest discover -s tests -v
 
 固定したメーカー版へ同じ指令・エンコーダ値・計算時刻を与え、出力・小数繰越・位置計算・
 I2C要求列を3モードで比較する。full/minimalの共通集計、従来オプションとの互換性、
-サービス失敗、キュー満杯と送信失敗も検証する。
+サービス検索の時間・失敗・同時呼び出し、サービス失敗、キュー満杯と送信失敗も検証する。
 Pi上のcatkinビルド、Python 2 / ROS実行、実機での周期・負荷の比較は別途必要。
 
 PC記録ツールも、ROS接続を作らないMATLABテストで検証できる。

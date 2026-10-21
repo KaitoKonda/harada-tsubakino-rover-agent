@@ -23,6 +23,10 @@
 - 計測基盤は `full/minimal/off` を持ち、fullとminimalで同じ時間集計を使う。
   minimalでは毎周期の詳細データのコピー・レコード・イベントキューを省く。
   元の計算式とI2C要求順は各モードとも維持する。
+- サービスクライアントはROS Melodicの `ServiceProxy` を継承し、既存の
+  `_get_service_uri` の前後で検索時間を計測する。検索処理そのものと接続・要求・応答処理は
+  ROSの実装へ委ね、既定の非永続接続を維持する。ROS本体のコピー・編集は行わない。
+  I2Cサーバーは引き続きメーカー版を使う。
 
 MIT License (upstream package declaration)
 

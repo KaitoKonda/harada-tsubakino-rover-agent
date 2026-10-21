@@ -9,11 +9,12 @@ from lightrover_ros.srv import *
 import time
 import math
 from rover_drive_trace import motor as vs_wrc201_motor
-from rover_drive_trace.trace import NullTrace, create_trace, difference, timed_call
+from rover_drive_trace.trace import (NullTrace, create_trace, difference, timed_call,
+                                    create_service_proxy)
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 
-write_msg = rospy.ServiceProxy('wrc201_i2c',Wrc201Msg)
+write_msg = create_service_proxy(rospy, 'wrc201_i2c', Wrc201Msg, lambda: trace)
 
 #メモリマップアドレス
 MU8_O_EN = 0x10
@@ -155,6 +156,8 @@ def pos_cntrl():
             position_p_gain=[128, 128], punch=[2500, 2500],
             motor_parameters=list(motor_controller.motor_param),
             encoder_counts_per_m=motor_controller.ENC_PER_M,
+            service_proxy_persistent=False,
+            service_lookup_timing='ServiceProxy._get_service_uri',
             additional_i2c_reads=False))
         rospy.wait_for_service('wrc201_i2c')
 

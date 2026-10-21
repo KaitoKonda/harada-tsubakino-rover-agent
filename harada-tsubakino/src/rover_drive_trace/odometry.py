@@ -10,7 +10,8 @@ import time
 import math
 from geometry_msgs.msg import PoseStamped, TwistStamped, Quaternion ,TransformStamped
 import tf
-from rover_drive_trace.trace import NullTrace, create_trace, difference, timed_call
+from rover_drive_trace.trace import (NullTrace, create_trace, difference, timed_call,
+                                    create_service_proxy)
 from nav_msgs.msg import Odometry
 
 MS32_M_POS0 = 0x60
@@ -35,7 +36,7 @@ x = 0.0
 y = 0.0
 th = 0.0
 
-read_enc = rospy.ServiceProxy('wrc201_i2c',Wrc201Msg)
+read_enc = create_service_proxy(rospy, 'wrc201_i2c', Wrc201Msg, lambda: trace)
 trace = NullTrace()
 sample_seq = 0
 read_records = []
@@ -152,6 +153,8 @@ def lightrover_odometry():
             encoder_counts_per_turn=ENC_COUNTS_PER_TURN,
             encoder_counts_per_m=ENC_PER_M, track_width_m=2*ROVER_D,
             requested_rate_hz=100, diff_count_limit=DIFF_COUNT_LIMIT,
+            service_proxy_persistent=False,
+            service_lookup_timing='ServiceProxy._get_service_uri',
             additional_i2c_reads=False))
         rospy.wait_for_service('wrc201_i2c')
 

@@ -15,7 +15,8 @@ import xml.etree.ElementTree as ET
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE = os.path.join(ROOT, 'harada-tsubakino', 'src')
 sys.path.insert(0, SOURCE)
-from rover_drive_trace.trace import NullTrace, TracePublisher, timed_call, resolve_mode, create_trace
+from rover_drive_trace.trace import (NullTrace, TracePublisher, timed_call, resolve_mode,
+                                    create_trace, create_service_proxy)
 
 
 class MemoryTrace(NullTrace):
@@ -77,7 +78,29 @@ class Environment:
         self.rospy = types.ModuleType('rospy')
         self.rospy.ServiceException = type('ServiceException', (Exception,), {})
         self.rospy.ROSInterruptException = type('ROSInterruptException', (Exception,), {})
-        self.rospy.ServiceProxy = lambda *args: self.service
+        self.lookup_calls = []
+        env = self
+
+        class ServiceProxy:
+            def __init__(self, name, service_class, persistent=False, headers=None):
+                self.name = name
+                self.service_class = service_class
+                self.persistent = persistent
+                self.headers = headers
+
+            def __call__(self, *args, **kwargs):
+                return self.call(*args, **kwargs)
+
+            def call(self, *args, **kwargs):
+                request = types.SimpleNamespace(addr=args[0], data=args[1],
+                                                length=args[2], cmd=args[3])
+                self._get_service_uri(request)
+                return env.service(*args, **kwargs)
+
+            def _get_service_uri(self, request):
+                return env.lookup(request)
+
+        self.rospy.ServiceProxy = ServiceProxy
         self.rospy.loginfo = lambda *args: None
         self.rospy.logwarn = lambda *args: None
         self.rospy.Time = types.SimpleNamespace(now=lambda: Stamp())
@@ -115,6 +138,10 @@ class Environment:
             raise self.rospy.ServiceException('injected service failure')
         value = self.responses.pop(0) if self.responses else 1
         return types.SimpleNamespace(readData=value)
+
+    def lookup(self, request):
+        self.lookup_calls.append(request)
+        return 'rosrpc://pi1:12345'
 
     def load(self, filename, upstream=False):
         path = os.path.join(ROOT, 'tests', 'upstream', filename) if upstream else \
@@ -318,6 +345,138 @@ class TransportTests(unittest.TestCase):
         for t in threads:
             t.join()
         self.assertEqual([r['seq'] for r in trace.queue], list(range(1, 401)))
+
+
+class ServiceLookupTests(unittest.TestCase):
+    def make_trace(self, env, mode, clock):
+        with patch.dict(sys.modules, env.modules):
+            return TracePublisher(env.rospy, 'controller', {}, clock=clock,
+                                  start_worker=False, mode=mode)
+
+    def test_native_lookup_and_request_are_each_called_once_in_both_modes(self):
+        for mode in ('full', 'minimal'):
+            env = Environment()
+            clock = [0.0]
+            trace = self.make_trace(env, mode, lambda: clock[0])
+            native_lookup, native_service = env.lookup, env.service
+
+            def lookup(request):
+                clock[0] += .025
+                return native_lookup(request)
+
+            def service(*args):
+                clock[0] += .075
+                return native_service(*args)
+
+            env.lookup, env.service = lookup, service
+            active_trace = [NullTrace()]
+            proxy = create_service_proxy(env.rospy, 'wrc201_i2c', object,
+                                         lambda: active_trace[0])
+            # Nodes construct the proxy before initializing the real trace.
+            active_trace[0] = trace
+            self.assertFalse(proxy.persistent)
+            self.assertIsNone(proxy.headers)
+            self.assertNotIn('call', proxy.__class__.__dict__)
+            self.assertNotIn('__call__', proxy.__class__.__dict__)
+            records = [] if trace.detailed else None
+            for args in ((0x48, 7, 4, 'w'), (0x60, 0, 4, 'r')):
+                result = timed_call(trace, proxy, args, records)
+                self.assertEqual(result.readData, 1)
+            self.assertEqual(len(env.lookup_calls), 2)
+            self.assertEqual(env.calls, [(0x48, 7, 4, 'w'), (0x60, 0, 4, 'r')])
+            trace.flush_timing()
+            metrics = json.loads(trace.timing_publisher.messages[-1].data)['metrics']
+            for operation in ('w_0x48', 'r_0x60'):
+                lookup = metrics['service_lookup_' + operation + '_s']
+                total = metrics['service_' + operation + '_s']
+                self.assertEqual(lookup['count'], 1)
+                self.assertEqual(lookup['failures'], 0)
+                self.assertAlmostEqual(lookup['mean'], .025)
+                self.assertAlmostEqual(total['mean'], .1)
+
+    def test_lookup_failure_preserves_exception_and_does_not_send_request(self):
+        env = Environment()
+        clock = [0.0]
+        trace = self.make_trace(env, 'minimal', lambda: clock[0])
+        failure = env.rospy.ServiceException('master unavailable')
+
+        def lookup(request):
+            clock[0] += .05
+            raise failure
+
+        env.lookup = lookup
+        proxy = create_service_proxy(env.rospy, 'wrc201_i2c', object, lambda: trace)
+        with self.assertRaises(env.rospy.ServiceException) as error:
+            timed_call(trace, proxy, (0x11, 3, 1, 'w'), None)
+        self.assertIs(error.exception, failure)
+        self.assertEqual(env.calls, [])
+        trace.flush_timing()
+        metrics = json.loads(trace.timing_publisher.messages[-1].data)['metrics']
+        self.assertEqual(metrics['service_lookup_w_0x11_s']['failures'], 1)
+        self.assertEqual(metrics['service_w_0x11_s']['failures'], 1)
+        self.assertAlmostEqual(metrics['service_lookup_w_0x11_s']['mean'], .05)
+
+    def test_service_failure_after_successful_lookup_is_not_a_lookup_failure(self):
+        env = Environment()
+        trace = self.make_trace(env, 'minimal', lambda: 0.0)
+        env.fail_at = 1
+        proxy = create_service_proxy(env.rospy, 'wrc201_i2c', object, lambda: trace)
+        with self.assertRaises(env.rospy.ServiceException):
+            timed_call(trace, proxy, (0x48, 0, 4, 'w'), None)
+        trace.flush_timing()
+        metrics = json.loads(trace.timing_publisher.messages[-1].data)['metrics']
+        self.assertEqual(metrics['service_lookup_w_0x48_s']['failures'], 0)
+        self.assertEqual(metrics['service_w_0x48_s']['failures'], 1)
+        self.assertEqual(len(env.calls), 1)
+
+    def test_off_delegates_lookup_without_reading_the_clock(self):
+        env = Environment()
+        trace = NullTrace()
+        trace.now = lambda: self.fail('off mode must not read the trace clock')
+        proxy = create_service_proxy(env.rospy, 'wrc201_i2c', object, lambda: trace)
+        self.assertEqual(timed_call(trace, proxy, (0x60, 0, 4, 'r'), None).readData, 1)
+        self.assertEqual(len(env.lookup_calls), 1)
+        self.assertEqual(env.calls, [(0x60, 0, 4, 'r')])
+
+    def test_concurrent_lookup_timings_do_not_share_start_times(self):
+        env = Environment()
+        clock = threading.local()
+        trace = self.make_trace(env, 'minimal', lambda: getattr(clock, 'value', 0.0))
+        barrier = threading.Barrier(2, timeout=2)
+
+        def lookup(request):
+            clock.value += request.addr / 1000.0
+            barrier.wait()
+            return 'rosrpc://pi1:12345'
+
+        env.lookup = lookup
+        proxy = create_service_proxy(env.rospy, 'wrc201_i2c', object, lambda: trace)
+        errors = []
+
+        def call(address):
+            try:
+                clock.value = 0.0
+                timed_call(trace, proxy, (address, 0, 4, 'r'), None)
+            except Exception as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=call, args=(a,)) for a in (0x60, 0x64)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        trace.flush_timing()
+        metrics = json.loads(trace.timing_publisher.messages[-1].data)['metrics']
+        self.assertAlmostEqual(metrics['service_lookup_r_0x60_s']['mean'], .096)
+        self.assertAlmostEqual(metrics['service_lookup_r_0x64_s']['mean'], .100)
+
+    def test_master_uri_is_saved_in_metadata(self):
+        env = Environment()
+        with patch.dict(os.environ, {'ROS_MASTER_URI': 'http://control-pc:11311'}):
+            trace = self.make_trace(env, 'minimal', lambda: 0.0)
+        self.assertEqual(trace.metadata['ros_master_uri'], 'http://control-pc:11311')
 
 
 class PackagingTests(unittest.TestCase):
