@@ -27,7 +27,8 @@ classdef DriveTraceRecorder < handle
             obj.fid = fopen(obj.logFile,'w','n','UTF-8');
             assert(obj.fid >= 0,'DriveTrace:OpenFailed', ...
                 'Could not open %s.',obj.logFile);
-            streams = ["controller","controller_metadata","wheel","wheel_metadata"];
+            streams = ["controller","controller_metadata","controller_timing", ...
+                "wheel","wheel_metadata","wheel_timing"];
             try
                 for name = vehicleNames
                     for stream = streams

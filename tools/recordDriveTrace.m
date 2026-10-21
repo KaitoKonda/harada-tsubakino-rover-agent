@@ -19,6 +19,6 @@ function logFile = recordDriveTrace(vehicleNames, durationSeconds, outputDirecto
     fprintf('Saved %d ROS messages: %s\n',recorder.messageCount,logFile);
     if recorder.messageCount == 0
         warning('DriveTrace:NoMessages', ...
-            'No telemetry received. Check launch mode and trace_enabled.');
+            'No telemetry received. Check instrumented_drive and trace_mode.');
     end
 end

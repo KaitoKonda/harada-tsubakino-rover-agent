@@ -15,11 +15,12 @@ import xml.etree.ElementTree as ET
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE = os.path.join(ROOT, 'harada-tsubakino', 'src')
 sys.path.insert(0, SOURCE)
-from rover_drive_trace.trace import NullTrace, TracePublisher, timed_call
+from rover_drive_trace.trace import NullTrace, TracePublisher, timed_call, resolve_mode, create_trace
 
 
 class MemoryTrace(NullTrace):
     enabled = True
+    detailed = True
 
     def __init__(self):
         self.events = []
@@ -31,6 +32,13 @@ class MemoryTrace(NullTrace):
 
     def emit(self, event, fields=None, at=None):
         self.events.append((event, copy.deepcopy(fields)))
+
+
+class MinimalMemoryTrace(MemoryTrace):
+    detailed = False
+
+    def emit(self, *args, **kwargs):
+        raise AssertionError('minimal mode must not construct detailed events')
 
 
 class Clock:
@@ -125,7 +133,8 @@ class Environment:
         # Each module/model gets independent class-level mutable arrays.
         with patch.object(rover_drive_trace, 'motor', motor, create=True):
             node = self.load('pos_controller.py' if upstream else 'controller.py', upstream)
-        node.trace = MemoryTrace() if enabled else NullTrace()
+        node.trace = (MinimalMemoryTrace() if enabled == 'minimal' else
+                      MemoryTrace() if enabled else NullTrace())
         return node
 
 
@@ -139,7 +148,7 @@ class DriveRegressionTests(unittest.TestCase):
         self.assertIsNone(node.latest_command['caller_id'])
 
     def test_controller_matches_upstream_with_and_without_trace(self):
-        for enabled in (True, False):
+        for enabled in (True, 'minimal', False):
             original_env, traced_env = Environment(), Environment()
             original = original_env.controller(upstream=True)
             traced = traced_env.controller(enabled=enabled)
@@ -158,7 +167,7 @@ class DriveRegressionTests(unittest.TestCase):
                                  traced.motor_controller.buf_enc_com)
             self.assertEqual(original_env.calls, traced_env.calls)
             self.assertEqual(len(traced_env.calls), 3 * len(sequence))
-            if enabled:
+            if enabled is True:
                 event = traced.trace.events[-1][1]
                 self.assertTrue(event['success'])
                 self.assertEqual(event['wheel_odom_stamp_ns'], 123456)
@@ -195,11 +204,12 @@ class DriveRegressionTests(unittest.TestCase):
                          [0x10, 0x11, 0x20, 0x22, 0x30, 0x32, 0x10])
 
     def test_encoder_calculation_and_read_order_match_upstream(self):
-        for enabled in (True, False):
+        for enabled in (True, 'minimal', False):
             original_env, traced_env = Environment(), Environment()
             original = original_env.load('odometry.py', upstream=True)
             traced = traced_env.load('odometry.py')
-            traced.trace = MemoryTrace() if enabled else NullTrace()
+            traced.trace = (MinimalMemoryTrace() if enabled == 'minimal' else
+                            MemoryTrace() if enabled else NullTrace())
             original.pre_time = traced.pre_time = 99.0
             # Include standstill, reverse, and the upstream rejected-delta path.
             counts = [(0, 0), (-3, 3), (-6, 7), (-6, 7), (2, -1),
@@ -216,7 +226,7 @@ class DriveRegressionTests(unittest.TestCase):
                                  (traced.x, traced.y, traced.th))
             self.assertEqual(original_env.calls, traced_env.calls)
             self.assertEqual(len(traced_env.calls), 2 * len(counts))
-            if enabled:
+            if enabled is True:
                 event = traced.trace.events[-1][1]
                 self.assertEqual(event['encoder_counts'], list(counts[-1]))
                 self.assertEqual(len(event['service_calls']), 2)
@@ -311,6 +321,22 @@ class TransportTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
+    def test_launch_passes_string_mode_and_interval_to_both_nodes(self):
+        path = os.path.join(ROOT, 'harada-tsubakino', 'launch', 'harada-tsubakino.launch')
+        launch = ET.parse(path).getroot()
+        defaults = {a.get('name'): a.get('default') for a in launch.findall('arg')}
+        self.assertEqual(defaults['trace_mode'], '')
+        self.assertEqual(defaults['trace_enabled'], 'true')
+        self.assertEqual(defaults['trace_summary_interval'], '5.0')
+        for node in launch.findall('.//node'):
+            if node.get('type') not in ('tracedOdometry.py', 'tracedPosController.py'):
+                continue
+            params = {p.get('name'): p.attrib for p in node.findall('param')}
+            self.assertEqual(params['trace_mode']['type'], 'str')
+            self.assertEqual(params['trace_mode']['value'], '$(arg trace_mode)')
+            self.assertEqual(params['trace_summary_interval']['value'],
+                             '$(arg trace_summary_interval)')
+
     def test_upstream_fixtures_are_pinned_git_blobs(self):
         expected = {'pos_controller.py': '618bb67db1044e75fbde482903250f14aa94adb9',
                     'odometry.py': '8fd864156607c2a2a87455a27bea5b210ef1f1a7',
@@ -335,6 +361,190 @@ class PackagingTests(unittest.TestCase):
                                  'harada-tsubakino' if enabled else 'lightrover_ros')
                 self.assertTrue(any(m.attrib == {'from': 'odom', 'to': 'odometry/wheel'}
                                     for m in matches[0].findall('remap')))
+
+
+class TimingModeTests(unittest.TestCase):
+    def make_trace(self, mode, clock=None, env=None):
+        env = env or Environment()
+        with patch.dict(sys.modules, env.modules):
+            trace = TracePublisher(env.rospy, 'controller', {},
+                clock=clock or (lambda: 10.0), start_worker=False, mode=mode)
+        return env, trace
+
+    def test_mode_selection_legacy_compatibility_and_precedence(self):
+        self.assertEqual(resolve_mode(), 'full')
+        self.assertEqual(resolve_mode('', False), 'off')
+        self.assertEqual(resolve_mode('', 'false'), 'off')
+        self.assertEqual(resolve_mode('', 'true'), 'full')
+        for mode in ('full', 'minimal', 'off'):
+            self.assertEqual(resolve_mode(mode, False), mode)
+            self.assertEqual(resolve_mode(mode, True), mode)
+        for invalid in ('true', 'false', 'minmal', True, 1):
+            with self.assertRaises(ValueError):
+                resolve_mode(invalid)
+        with self.assertRaises(ValueError):
+            resolve_mode('', 'minimal')
+
+    def test_off_creates_no_publisher_clock_or_worker(self):
+        env = Environment()
+        env.parameters['~trace_mode'] = 'off'
+        with patch('rover_drive_trace.trace.make_monotonic') as clock:
+            trace = create_trace(env.rospy, 'controller', {})
+        self.assertFalse(trace.enabled)
+        self.assertFalse(trace.detailed)
+        self.assertEqual(env.publishers, {})
+        clock.assert_not_called()
+        env.parameters['~trace_mode'] = 'typo'
+        with self.assertRaises(ValueError):
+            create_trace(env.rospy, 'controller', {})
+
+    def test_minimal_has_no_event_queue_or_detailed_publisher(self):
+        env, trace = self.make_trace('minimal')
+        self.assertTrue(trace.enabled)
+        self.assertFalse(trace.detailed)
+        self.assertIsNone(trace.queue)
+        self.assertIsNone(trace.publisher)
+        self.assertNotIn('drive_trace/controller', env.publishers)
+        # Even an unserializable detail is ignored, without copying or encoding.
+        trace.emit('ignored', object())
+        trace.flush()
+        self.assertEqual(trace.sequence, 0)
+        self.assertEqual(trace.capture_errors, 0)
+        env.responses = [4]
+        with patch('rover_drive_trace.trace.json.dumps', side_effect=AssertionError('JSON on producer')):
+            self.assertEqual(timed_call(trace, env.service, (0x60, 0, 4, 'r'), None).readData, 4)
+        self.assertEqual(trace.timing_metrics['service_r_0x60_s'][0], 1)
+        trace.flush_timing()
+        summary = json.loads(trace.timing_publisher.messages[-1].data)
+        self.assertEqual(summary['trace_mode'], 'minimal')
+        self.assertEqual(summary['metrics']['service_r_0x60_s']['count'], 1)
+
+    def test_full_and_minimal_have_identical_controller_and_wheel_summaries(self):
+        summaries = []
+        for mode in ('full', 'minimal'):
+            env = Environment()
+            node = env.controller()
+            clock = [10.0]
+            _, trace = self.make_trace(mode, clock=lambda: clock[0], env=env)
+            node.trace = trace
+
+            def service(*args):
+                clock[0] += .01
+                return env.service(*args)
+
+            node.write_msg = service
+            for v in (.05, 0, -.05):
+                node.cb_set_target_v(twist(v, 0))
+                clock[0] += .1
+                node.cb_get_rover_v(wheel(0, 0))
+            odometry = env.load('odometry.py')
+            odometry.trace = trace
+            odometry.pre_time = 99
+            odometry.read_enc = service
+            for _ in range(2):
+                clock[0] += .1
+                env.responses = [3, -3]
+                odometry.calSpeed()
+            trace.flush_timing()
+            summary = json.loads(trace.timing_publisher.messages[-1].data)
+            self.assertEqual(summary['counters']['control_cycles'], 3)
+            self.assertEqual(summary['counters']['wheel_samples'], 2)
+            self.assertEqual(summary['counters']['commands_received'], 3)
+            self.assertEqual(summary['metrics']['control_duration_s']['count'], 3)
+            self.assertEqual(summary['metrics']['control_period_s']['count'], 2)
+            self.assertAlmostEqual(summary['metrics']['control_duration_s']['mean'], .03)
+            summaries.append((summary['metrics'], summary['counters'], env.calls))
+            if mode == 'minimal':
+                self.assertIsNone(node.latest_command)
+                self.assertIsNone(odometry.read_records)
+                self.assertIsNone(odometry.last_read_counts)
+        self.assertEqual(summaries[0], summaries[1])
+
+    def test_minimal_failed_service_is_counted_and_still_raises(self):
+        env, trace = self.make_trace('minimal')
+        env.fail_at = 1
+        with self.assertRaises(env.rospy.ServiceException):
+            timed_call(trace, env.service, (0x48, 0, 4, 'w'), None)
+        trace.flush_timing()
+        summary = json.loads(trace.timing_publisher.messages[-1].data)
+        self.assertEqual(summary['metrics']['service_w_0x48_s']['failures'], 1)
+        self.assertEqual(len(env.calls), 1)
+
+    def test_minimal_ignores_full_only_settings(self):
+        env = Environment()
+        env.parameters.update({'~trace_queue_capacity': 'unused',
+            '~trace_batch_size': 'unused', '~trace_publish_hz': 'unused'})
+        _, trace = self.make_trace('minimal', env=env)
+        self.assertEqual(trace.mode, 'minimal')
+        self.assertIsNone(trace.queue)
+
+    def test_failed_control_and_wheel_cycles_have_common_summaries(self):
+        for mode in ('full', 'minimal'):
+            env = Environment()
+            node = env.controller()
+            _, trace = self.make_trace(mode, env=env)
+            node.trace = trace
+            env.fail_at = 2
+            with self.assertRaises(env.rospy.ServiceException):
+                node.cb_get_rover_v(wheel(0, 0))
+            self.assertEqual([call[0] for call in env.calls], [0x48, 0x4c])
+            odometry = env.load('odometry.py')
+            odometry.trace = trace
+            odometry.pre_time = 99
+            env.fail_at = 4
+            self.assertIsNone(odometry.calSpeed())
+            trace.flush_timing()
+            summary = json.loads(trace.timing_publisher.messages[-1].data)
+            self.assertEqual(summary['counters']['control_failures'], 1)
+            self.assertEqual(summary['counters']['wheel_sample_failures'], 1)
+            self.assertEqual(summary['metrics']['service_w_0x4c_s']['failures'], 1)
+            self.assertEqual(summary['metrics']['service_r_0x64_s']['failures'], 1)
+
+    def test_summary_window_reset_and_invalid_values(self):
+        clock = [10.0]
+        _, trace = self.make_trace('minimal', clock=lambda: clock[0])
+        trace.observe('duration_s', 1)
+        trace.observe('duration_s', 2, failed=True)
+        trace.observe('duration_s', None)
+        trace.observe('duration_s', float('nan'))
+        trace.count('cycles')
+        clock[0] = 15.0
+        trace.flush_timing()
+        summary = json.loads(trace.timing_publisher.messages[-1].data)
+        self.assertEqual(summary['metrics']['duration_s'],
+            dict(count=2, sum=3, mean=1.5, min=1, max=2, first=1, last=2, failures=1))
+        self.assertEqual(summary['window_duration_s'], 5)
+        self.assertEqual(summary['window_start_monotonic_s'], 10)
+        self.assertEqual(summary['capture_errors'], 1)
+        self.assertEqual(summary['counters'], {'cycles': 1})
+        self.assertEqual(trace.timing_metrics, {})
+        self.assertEqual(trace.timing_counters, {})
+        clock[0] = 17
+        trace.flush_timing(partial=True)
+        partial = json.loads(trace.timing_publisher.messages[-1].data)
+        self.assertTrue(partial['partial'])
+        self.assertEqual(partial['window_duration_s'], 2)
+        self.assertEqual(partial['summary_seq'], 2)
+        self.assertEqual(partial['metrics'], {})
+
+    def test_minimal_worker_publishes_summary_and_stops_promptly(self):
+        env = Environment()
+        env.parameters['~trace_summary_interval'] = .02
+        with patch.dict(sys.modules, env.modules):
+            trace = TracePublisher(env.rospy, 'controller', {}, mode='minimal')
+        try:
+            trace.observe('test_s', .1)
+            deadline = time.monotonic()+2
+            while not trace.timing_publisher.messages and time.monotonic()<deadline:
+                time.sleep(.005)
+            self.assertTrue(trace.timing_publisher.messages)
+            summaries = [json.loads(m.data) for m in trace.timing_publisher.messages]
+            self.assertTrue(any('test_s' in s['metrics'] for s in summaries))
+            self.assertNotIn('drive_trace/controller', env.publishers)
+        finally:
+            trace.close()
+        self.assertFalse(trace.thread.is_alive())
+        self.assertTrue(json.loads(trace.timing_publisher.messages[-1].data)['partial'])
 
 
 if __name__ == '__main__':

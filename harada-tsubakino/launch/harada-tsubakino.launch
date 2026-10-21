@@ -2,6 +2,9 @@
   <arg name="group" default="$(optenv HOSTNAME rover)" />
   <arg name="instrumented_drive" default="true" />
   <arg name="trace_enabled" default="true" />
+  <!-- Empty mode preserves the legacy trace_enabled true/false mapping. -->
+  <arg name="trace_mode" default="" />
+  <arg name="trace_summary_interval" default="5.0" />
   <arg name="trace_queue_capacity" default="2048" />
   <arg name="trace_publish_hz" default="20" />
   <param name="rosconsole_config_file" value="$(find harada-tsubakino)/config/rosconsole.conf" if="$(optenv USE_ROSLOG_CONFIG false)" />
@@ -23,13 +26,17 @@
     <node pkg="harada-tsubakino" type="tracedOdometry.py" name="rover_odometry" if="$(arg instrumented_drive)">
       <remap from="odom" to="odometry/wheel" />
       <remap from="/tf" to="/$(arg group)/wheel_tf_internal" />
-      <param name="trace_enabled" value="$(arg trace_enabled)" />
+      <param name="trace_enabled" type="bool" value="$(arg trace_enabled)" />
+      <param name="trace_mode" type="str" value="$(arg trace_mode)" />
+      <param name="trace_summary_interval" value="$(arg trace_summary_interval)" />
       <param name="trace_queue_capacity" value="$(arg trace_queue_capacity)" />
       <param name="trace_publish_hz" value="$(arg trace_publish_hz)" />
     </node>
     <node pkg="harada-tsubakino" type="tracedPosController.py" name="rover_pos" if="$(arg instrumented_drive)">
       <remap from="odom" to="odometry/wheel" />
-      <param name="trace_enabled" value="$(arg trace_enabled)" />
+      <param name="trace_enabled" type="bool" value="$(arg trace_enabled)" />
+      <param name="trace_mode" type="str" value="$(arg trace_mode)" />
+      <param name="trace_summary_interval" value="$(arg trace_summary_interval)" />
       <param name="trace_queue_capacity" value="$(arg trace_queue_capacity)" />
       <param name="trace_publish_hz" value="$(arg trace_publish_hz)" />
     </node>

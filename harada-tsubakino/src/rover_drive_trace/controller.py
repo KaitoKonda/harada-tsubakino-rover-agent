@@ -43,6 +43,7 @@ motor_controller = vs_wrc201_motor.VsWrc201Motor()
 trace = NullTrace()
 command_seq = 0
 latest_command = None
+last_command_at = None
 cycle_seq = 0
 previous_cycle_at = None
 
@@ -50,9 +51,12 @@ def cb_get_rover_v(data):
         global linear_x,angular_z,current_v,ROVER_D,target_rover_v
         global cycle_seq, previous_cycle_at
         started = trace.now()
+        odom_age = ((rospy.Time.now().to_nsec() - data.header.stamp.to_nsec()) * 1e-9
+                    if trace.enabled else None)
         cycle_seq += 1
-        command_at_start = latest_command
-        target_at_start = list(target_rover_v)
+        command_at_start = latest_command if trace.detailed else None
+        received_at_start = last_command_at
+        target_at_start = list(target_rover_v) if trace.detailed else None
         period = difference(started, previous_cycle_at)
         previous_cycle_at = started
         linear_x = data.twist.twist.linear.x
@@ -65,7 +69,7 @@ def cb_get_rover_v(data):
         #現在のモータ回転速度と目標のモータ回転速度をPOSコントローラに入力
         #左右モータへの出力値を算出
         output = None
-        writes = []
+        writes = [] if trace.detailed else None
         success = False
         error_text = None
         try:
@@ -73,11 +77,20 @@ def cb_get_rover_v(data):
                 drive_motor(output[0],output[1], writes)
                 success = True
         except Exception as error:
-                error_text = str(error)
+                if trace.detailed:
+                        error_text = str(error)
                 raise
         finally:
                 if trace.enabled:
                         ended = trace.now()
+                        trace.count('control_cycles')
+                        if not success:
+                                trace.count('control_failures')
+                        trace.observe('control_period_s', period)
+                        trace.observe('control_duration_s', difference(ended, started))
+                        trace.observe('wheel_odom_age_at_start_s', odom_age)
+                        trace.observe('command_age_at_start_s', difference(started, received_at_start))
+                if trace.detailed:
                         trace.emit('control_cycle', dict(
                             cycle_seq=cycle_seq, period_s=period,
                             command_at_start=command_at_start,
@@ -86,6 +99,7 @@ def cb_get_rover_v(data):
                                 difference(started, command_at_start['received_monotonic_s'])),
                             wheel_odom_stamp_ns=data.header.stamp.to_nsec(),
                             wheel_odom_seq=data.header.seq,
+                            wheel_odom_age_at_start_s=odom_age,
                             measured_wheel_mps=list(current_v),
                             target_wheel_mps_at_start=target_at_start,
                             target_wheel_mps_at_end=list(target_rover_v),
@@ -99,33 +113,36 @@ def cb_get_rover_v(data):
                             at=started)
 
 def cb_set_target_v(data):
-        global ROVER_D,target_rover_v,command_seq,latest_command
+        global ROVER_D,target_rover_v,command_seq,latest_command,last_command_at
         received = trace.now()
         #目標直進・旋回速度から左右モータの目標回転速度を算出
         target_rover_v[1] = (data.linear.x + ROVER_D * data.angular.z)
         target_rover_v[0] = -1.0 * (data.linear.x - ROVER_D * data.angular.z)
         command_seq += 1
-        latest_command = dict(command_seq=command_seq,
-            received_monotonic_s=received, linear_mps=data.linear.x,
-            angular_radps=data.angular.z,
-            caller_id=(getattr(data, '_connection_header', None) or {}).get('callerid'))
+        last_command_at = received
         if trace.enabled:
+                trace.count('commands_received')
+        if trace.detailed:
+                latest_command = dict(command_seq=command_seq,
+                    received_monotonic_s=received, linear_mps=data.linear.x,
+                    angular_radps=data.angular.z,
+                    caller_id=(getattr(data, '_connection_header', None) or {}).get('callerid'))
                 trace.emit('command_received', dict(latest_command,
                     target_wheel_mps=list(target_rover_v)), at=received)
 
 def drive_motor(r_speed, l_speed, records=None):
-        if records is None:
+        if records is None and trace.detailed:
                 records = []
         timed_call(trace, write_msg, (MS32_A_POS0,r_speed,4,'w'), records)
         timed_call(trace, write_msg, (MS32_A_POS1,l_speed,4,'w'), records)
         timed_call(trace, write_msg, (MU8_TRIG,0x03,1,'w'), records)
 
 def init_write(*args):
-        records = []
+        records = [] if trace.detailed else None
         try:
                 return timed_call(trace, write_msg, args, records)
         finally:
-                if trace.enabled:
+                if trace.detailed:
                         trace.emit('initialization_write', dict(service_calls=records))
 
 def pos_cntrl():

@@ -44,7 +44,7 @@ last_read_error = None
 
 def getEncVal():
         global read_records, last_read_counts, last_read_error
-        read_records = []
+        read_records = [] if trace.detailed else None
         last_read_counts = None
         last_read_error = None
 
@@ -53,11 +53,13 @@ def getEncVal():
                 enc_a = timed_call(trace, read_enc, (MS32_M_POS0,0,4,'r'), read_records)
                 enc_b = timed_call(trace, read_enc, (MS32_M_POS1,0,4,'r'), read_records)
 
-                last_read_counts = [enc_a.readData, enc_b.readData]
+                if trace.detailed:
+                        last_read_counts = [enc_a.readData, enc_b.readData]
                 return enc_a.readData,enc_b.readData
 
         except rospy.ServiceException as e:
-                last_read_error = str(e)
+                if trace.detailed:
+                        last_read_error = str(e)
                 rospy.loginfo('Service call failed: %s',e)
 
 def _calSpeed():
@@ -97,18 +99,25 @@ def calSpeed():
         global sample_seq
         sample_seq += 1
         started = trace.now()
-        previous_counts = list(pre_count)
+        previous_counts = list(pre_count) if trace.detailed else None
         result = None
         error_text = None
         try:
                 result = _calSpeed()
                 return result
         except Exception as error:
-                error_text = str(error)
+                if trace.detailed:
+                        error_text = str(error)
                 raise
         finally:
                 if trace.enabled:
                         ended = trace.now()
+                        trace.count('wheel_samples')
+                        if result is None:
+                                trace.count('wheel_sample_failures')
+                        trace.observe('wheel_sample_duration_s', difference(ended, started))
+                        trace.observe('wheel_calculation_dt_s', diff_time)
+                if trace.detailed:
                         raw_delta = (None if last_read_counts is None else
                             [last_read_counts[i] - previous_counts[i] for i in range(2)])
                         trace.emit('wheel_sample', dict(
@@ -200,6 +209,8 @@ def lightrover_odometry():
 
                         odom_pub.publish(odom)
                         if trace.enabled:
+                                trace.count('wheel_published')
+                        if trace.detailed:
                                 trace.emit('wheel_published', dict(
                                     sample_seq=sample_seq,
                                     odom_stamp_ns=now_time.to_nsec(),
