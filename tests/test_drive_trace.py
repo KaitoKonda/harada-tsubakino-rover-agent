@@ -670,11 +670,13 @@ class PersistentServiceTests(unittest.TestCase):
                 self.proxy(env, persistent=invalid)
 
     def test_node_startup_applies_parameter_and_records_actual_setting(self):
-        for persistent in (False, True):
+        for setting in (None, False, True):
+            persistent = True if setting is None else setting
             for filename in ('controller.py', 'odometry.py'):
                 env = Environment()
                 node = env.controller() if filename == 'controller.py' else env.load(filename)
-                env.parameters['~i2c_persistent'] = persistent
+                if setting is not None:
+                    env.parameters['~i2c_persistent'] = setting
                 env.rospy.init_node = lambda *args, **kwargs: None
                 env.rospy.wait_for_service = lambda *args: None
                 env.rospy.Subscriber = lambda *args: None
@@ -719,7 +721,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(defaults['trace_mode'], '')
         self.assertEqual(defaults['trace_enabled'], 'true')
         self.assertEqual(defaults['trace_summary_interval'], '5.0')
-        self.assertEqual(defaults['i2c_persistent'], 'false')
+        self.assertEqual(defaults['i2c_persistent'], 'true')
         for node in launch.findall('.//node'):
             if node.get('type') not in ('tracedOdometry.py', 'tracedPosController.py'):
                 continue

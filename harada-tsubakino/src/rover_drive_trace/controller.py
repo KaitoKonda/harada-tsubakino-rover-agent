@@ -150,7 +150,7 @@ def pos_cntrl():
         rospy.init_node('pos_controller', anonymous=True)
         global trace, write_msg
         write_msg = create_service_proxy(rospy, 'wrc201_i2c', Wrc201Msg,
-            lambda: trace, persistent=rospy.get_param('~i2c_persistent', False))
+            lambda: trace, persistent=rospy.get_param('~i2c_persistent', True))
         trace = create_trace(rospy, 'controller', dict(
             upstream_blob='618bb67db1044e75fbde482903250f14aa94adb9',
             motor_upstream_blob='599c2eedeec64bc68008ad2aedce1f45e3dfe8d3',

@@ -15,7 +15,7 @@ Arduino Nano ESP32 から ROS に渡すための、ローバ側リポジトリ�
 `trace_mode:=full|minimal|off` で、詳細ログ・時間集計のみ・計測無効を切り替えられます。
 時間集計にはROSサービスの検索時間も含まれます。PCでゼロ指令を送って取得する
 [切り分け手順](docs/drive-trace.md#サービス検索時間の切り分け)も用意しています。
-`i2c_persistent:=true` で永続接続を選び、[従来方式と比較](docs/drive-trace.md#永続接続との比較)できます（既定は`false`）。
+永続接続が既定です。`i2c_persistent:=false` で[従来方式と比較](docs/drive-trace.md#永続接続との比較)できます。
 
 ## このリポジトリが担当する範囲
 

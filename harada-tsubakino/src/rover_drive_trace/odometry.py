@@ -147,7 +147,7 @@ def lightrover_odometry():
         rospy.init_node('wrc201_odometry', anonymous=True)
         global trace, read_enc
         read_enc = create_service_proxy(rospy, 'wrc201_i2c', Wrc201Msg,
-            lambda: trace, persistent=rospy.get_param('~i2c_persistent', False))
+            lambda: trace, persistent=rospy.get_param('~i2c_persistent', True))
         trace = create_trace(rospy, 'wheel', dict(
             upstream_blob='8fd864156607c2a2a87455a27bea5b210ef1f1a7',
             wheel_order=['motor0', 'motor1'],

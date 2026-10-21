@@ -66,8 +66,8 @@ GUIのLaunchを起動し直す。既定では計測版が選ばれる。トピ�
 最初・最後の値だけを一定量のメモリで集計する。`full` も同じ計測点・同じ集計方法を使う。
 `off` は比較用の内部時間も取得しない。モード変更はLaunchを停止して起動し直す。
 
-サービス接続方式は `i2c_persistent:=false`（既定）で従来の非永続接続、
-`i2c_persistent:=true` で永続接続を選ぶ。ログのモードとは独立で、
+サービス接続方式は `i2c_persistent:=true`（既定）で永続接続、
+`i2c_persistent:=false` で従来の非永続接続を選ぶ。ログのモードとは独立で、
 `instrumented_drive:=true` の計測版ノードに適用する。
 メーカー版を選ぶ `instrumented_drive:=false` ではこの引数は適用されない。
 
@@ -285,6 +285,8 @@ group:=pi1 trace_mode:=minimal i2c_persistent:=true
 ゼロ指令を従来と同じ周期で送り、約80秒記録する。
 最初の約10秒を除き、完全な集計窓を60秒分以上比較する。
 比較条件へ戻す場合は `i2c_persistent:=false` に変え、必ずLaunchを起動し直す。
+既定がtrueなので、永続接続を使う場合は `i2c_persistent:=true` の明示を省略してもよい。
+ノードを直接起動する場合も、パラメーター未指定なら永続接続になる。
 両条件とも新しく起動して、古い車輪odomの滞留を持ち越さない。
 PC記録器・Arduino・メーカーのパッケージを更新する必要はない。
 

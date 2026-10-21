@@ -1,7 +1,7 @@
 <launch>
   <arg name="group" default="$(optenv HOSTNAME rover)" />
   <arg name="instrumented_drive" default="true" />
-  <arg name="i2c_persistent" default="false" />
+  <arg name="i2c_persistent" default="true" />
   <arg name="trace_enabled" default="true" />
   <!-- Empty mode preserves the legacy trace_enabled true/false mapping. -->
   <arg name="trace_mode" default="" />
