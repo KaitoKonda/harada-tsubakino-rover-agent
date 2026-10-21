@@ -22,6 +22,9 @@ pre_count = [0.0, 0.0]
 diff_count = [0, 0]
 
 DIFF_COUNT_LIMIT = 1048575
+ENCODER_COUNTER_BITS = 32
+ENCODER_COUNTER_MODULUS = 1 << ENCODER_COUNTER_BITS
+ENCODER_COUNTER_HALF_RANGE = ENCODER_COUNTER_MODULUS >> 1
 
 pre_time = time.time()
 diff_time = 0
@@ -42,6 +45,12 @@ sample_seq = 0
 read_records = []
 last_read_counts = None
 last_read_error = None
+
+def encoder_delta_counts(current, previous):
+        # Smallest signed displacement on the 32-bit counter ring.
+        # Fewer than 2**31 counts may elapse between samples.
+        return ((int(current) - int(previous) + ENCODER_COUNTER_HALF_RANGE) %
+                ENCODER_COUNTER_MODULUS) - ENCODER_COUNTER_HALF_RANGE
 
 def getEncVal():
         global read_records, last_read_counts, last_read_error
@@ -80,8 +89,9 @@ def _calSpeed():
 
         #以前のエンコーダ値と現在のエンコーダ値の差を算出
         for i in range(2):
-                if(abs(enc_val[i]-pre_count[i]) < DIFF_COUNT_LIMIT):
-                        diff_count[i] = -1.0 * (enc_val[i]-pre_count[i])
+                delta = encoder_delta_counts(enc_val[i], pre_count[i])
+                if(abs(delta) < DIFF_COUNT_LIMIT):
+                        diff_count[i] = -1.0 * delta
 
         pre_count = enc_val
 
@@ -121,12 +131,16 @@ def calSpeed():
                 if trace.detailed:
                         raw_delta = (None if last_read_counts is None else
                             [last_read_counts[i] - previous_counts[i] for i in range(2)])
+                        wrapped_delta = (None if last_read_counts is None else
+                            [encoder_delta_counts(last_read_counts[i], previous_counts[i])
+                             for i in range(2)])
                         trace.emit('wheel_sample', dict(
                             sample_seq=sample_seq, previous_counts=previous_counts,
                             encoder_counts=last_read_counts,
                             raw_delta_counts=raw_delta,
-                            delta_accepted=(None if raw_delta is None else
-                                [abs(v) < DIFF_COUNT_LIMIT for v in raw_delta]),
+                            wrapped_delta_counts=wrapped_delta,
+                            delta_accepted=(None if wrapped_delta is None else
+                                [abs(v) < DIFF_COUNT_LIMIT for v in wrapped_delta]),
                             used_delta_counts=list(diff_count), calculation_dt_s=diff_time,
                             rover_velocity=result, success=result is not None,
                             error=error_text or last_read_error, service_calls=read_records,
@@ -155,6 +169,7 @@ def lightrover_odometry():
             encoder_counts_per_turn=ENC_COUNTS_PER_TURN,
             encoder_counts_per_m=ENC_PER_M, track_width_m=2*ROVER_D,
             requested_rate_hz=100, diff_count_limit=DIFF_COUNT_LIMIT,
+            encoder_delta_mode='signed_modulo_32',
             service_proxy_persistent=read_enc.persistent,
             service_lookup_timing='ServiceProxy._get_service_uri',
             additional_i2c_reads=False))

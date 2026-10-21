@@ -298,6 +298,68 @@ class DriveRegressionTests(unittest.TestCase):
         self.assertEqual(len(env.calls), 2)
 
 
+class EncoderRolloverTests(unittest.TestCase):
+    def test_zero_and_signed_boundaries_in_both_directions(self):
+        node = Environment().load('odometry.py')
+        cases = [(0, 0xffffffff, 1), (0xffffffff, 0, -1),
+                 (1, 0xfffffffe, 3), (0xfffffffe, 1, -3),
+                 (0x80000000, 0x7fffffff, 1),
+                 (0x7fffffff, 0x80000000, -1),
+                 (-0x80000000, 0x7fffffff, 1),
+                 (0x7fffffff, -0x80000000, -1)]
+        for current, previous, expected in cases:
+            self.assertEqual(node.encoder_delta_counts(current, previous), expected)
+
+    def test_rollover_and_reverse_preserve_distance_and_read_order_in_all_modes(self):
+        counts = [(0, 0), (0xffffffff, 1), (0xfffffffd, 3),
+                  (0xffffffff, 1), (1, 0xffffffff), (0, 0)]
+        expected_forward_counts = [0, 1, 2, -2, -2, 1]
+        for mode in ('full', 'minimal', 'off'):
+            env = Environment()
+            node = env.load('odometry.py')
+            node.trace = (MemoryTrace() if mode == 'full' else
+                          MinimalMemoryTrace() if mode == 'minimal' else NullTrace())
+            node.pre_time = 99.0
+            distance_counts = 0
+            for values, step in zip(counts, expected_forward_counts):
+                env.responses = list(values)
+                vx, wz = node.calSpeed()
+                distance_counts += step
+                self.assertEqual(node.diff_count, [step, -step])
+                self.assertAlmostEqual(vx * node.diff_time, step / node.ENC_PER_M)
+                self.assertEqual(wz, 0.0)
+                node.cal_odometry(vx, wz)
+                self.assertAlmostEqual(node.x, distance_counts / node.ENC_PER_M)
+                self.assertEqual(node.y, 0.0)
+                self.assertEqual(node.th, 0.0)
+                if mode == 'full':
+                    event = node.trace.events[-1][1]
+                    self.assertEqual(event['wrapped_delta_counts'], [-step, step])
+                    self.assertEqual(event['delta_accepted'], [True, True])
+            self.assertEqual(env.calls, [(addr, 0, 4, 'r')
+                             for _ in counts for addr in (0x60, 0x64)])
+
+    def test_trace_keeps_raw_jump_and_reports_the_corrected_acceptance(self):
+        env = Environment()
+        node = env.load('odometry.py')
+        node.trace = MemoryTrace()
+        env.responses = [0xffffffff, 1]
+        node.calSpeed()
+        event = node.trace.events[-1][1]
+        self.assertEqual(event['raw_delta_counts'], [0xffffffff, 1])
+        self.assertEqual(event['wrapped_delta_counts'], [-1, 1])
+        self.assertEqual(event['used_delta_counts'], [1, -1])
+        self.assertEqual(event['delta_accepted'], [True, True])
+
+    def test_missing_partial_read_keeps_wrapped_trace_empty(self):
+        env = Environment()
+        node = env.load('odometry.py')
+        node.trace = MemoryTrace()
+        env.fail_at = 2
+        self.assertIsNone(node.calSpeed())
+        self.assertIsNone(node.trace.events[-1][1]['wrapped_delta_counts'])
+
+
 class TransportTests(unittest.TestCase):
     def test_worker_publishes_without_ros_or_a_recording_subscriber(self):
         env = Environment()
@@ -708,6 +770,8 @@ class PersistentServiceTests(unittest.TestCase):
                     self.assertEqual(captured[0]['wheel_odom_queue_size'], odom[0][1]['queue_size'])
                     self.assertIs(odom[0][1]['tcp_nodelay'], True)
                     self.assertIs(captured[0]['wheel_odom_tcp_nodelay'], odom[0][1]['tcp_nodelay'])
+                else:
+                    self.assertEqual(captured[0]['encoder_delta_mode'], 'signed_modulo_32')
                 self.assertEqual(len(env.lookup_calls), 1 if persistent else len(env.calls))
                 self.assertTrue(env.calls)
 
