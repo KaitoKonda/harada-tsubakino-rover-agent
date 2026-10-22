@@ -94,9 +94,9 @@ sudo apt install -y git curl python-serial python3-yaml python3-pyqt5 avahi-daem
 
 ## 3. このリポジトリを取得する
 
-以下は通常運用の `main` を取得する手順です。内部ログの実機検証では
-`feature/drive-trace` を使うため、[内部ログの配置手順](drive-trace.md#配置起動)で
-ブランチを選んでから、手順4以降へ進んでください。
+以下は通常運用の `main` を取得する手順です。内部ログと走行処理の改善も `main` に
+含まれています。検証ブランチから更新する場合は、[内部ログの配置手順](drive-trace.md#配置起動)で
+`main` へ切り替えてから配置してください。
 
 ```bash
 cd ~
@@ -141,8 +141,8 @@ python3 update.py -r -g
 
 ### 既存ローバを更新する
 
-通常運用の `main` を更新する手順です。内部ログを検証する場合は、
-[検証ブランチの配置・更新手順](drive-trace.md#配置起動)を使ってください。
+通常運用の `main` を更新する手順です。内部ログの使い方は
+[内部ログの取得](drive-trace.md)を参照してください。
 
 既にセットアップ済みのローバでは、GUIの `Stop` を押して終了してから、次の順番で
 更新します。
@@ -168,8 +168,9 @@ git pull --ff-only origin main
 python3 update.py -r -g
 ```
 
-各コマンドが成功した場合だけ次へ進みます。検証ブランチから `main` へ戻す場合は、
-[mainへ戻す手順](drive-trace.md#mainの配置へ戻す)に従い、GUIの検証用起動引数も外してください。
+各コマンドが成功した場合だけ次へ進みます。`feature/drive-trace` から `main` へ
+切り替える場合も、内部ログ用の起動引数は引き続き使用できます。
+メーカー版の走行処理を使う場合は、[切替手順](drive-trace.md#メーカー版の走行処理へ切り替える)を参照してください。
 
 `-r` はROSパッケージの配置とビルド、`-g` は起動GUIとデスクトップアイコンの更新を
 行います。正常な `~/ROSGUILauncher/launcherConfig.yaml` と、そこに設定した制御用PCの

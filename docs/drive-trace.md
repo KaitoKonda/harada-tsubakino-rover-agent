@@ -6,8 +6,8 @@
 
 ## 配置・起動
 
-この機能は実機検証用の `feature/drive-trace` ブランチにある。`main` を更新するだけでは
-導入されない。実験とGUIのLaunchを停止してから、ローバーで以下を行う。
+内部ログと走行処理の改善は `main` に含まれる。以前の `feature/drive-trace` を
+配置している場合も、実験とGUIのLaunchを停止してから、ローバーで以下を行う。
 
 ```bash
 cd ~/harada-tsubakino-rover-agent
@@ -21,15 +21,15 @@ git status --short
 
 ```bash
 git fetch origin
-git checkout feature/drive-trace
+git checkout main
 git symbolic-ref --short HEAD
 ```
 
-表示が `feature/drive-trace` であることを確認してから更新・配置する。
-初回のcheckoutは `origin/feature/drive-trace` からローカルブランチを作る。
+表示が `main` であることを確認してから更新・配置する。
+ローカルにmainがない場合、初回のcheckoutは `origin/main` からローカルブランチを作る。
 
 ```bash
-git pull --ff-only origin feature/drive-trace
+git pull --ff-only origin main
 python3 update.py -r
 ```
 
@@ -37,12 +37,12 @@ python3 update.py -r
 作業ツリーをcatkinワークスペースへコピーするため、ブランチ変更後には必ず再実行する。
 今回の更新ではArduinoの再書き込みやGUIの更新は不要。
 
-新しく取得する場合は以下で検証ブランチを選び、その後 [セットアップ手順](setup.md) の
+新しく取得する場合は以下でmainを選び、その後 [セットアップ手順](setup.md) の
 ROSパッケージ配置以降を行う。
 
 ```bash
 cd ~
-git clone --branch feature/drive-trace https://github.com/KaitoKonda/harada-tsubakino-rover-agent.git
+git clone --branch main https://github.com/KaitoKonda/harada-tsubakino-rover-agent.git
 cd ~/harada-tsubakino-rover-agent
 git config --local core.filemode false
 ```
@@ -80,28 +80,21 @@ roslaunch harada-tsubakino harada-tsubakino.launch group:=pi1
 メーカー版と計測版を同時に起動しない。上記の起動引数は排他的にノードを選択する。
 引数を変えるときも、既存のLaunchを停止して起動し直す。
 
-### mainの配置へ戻す
+### メーカー版の走行処理へ切り替える
 
-実験とLaunchを停止し、作業ツリーに変更がないことを確認してから行う。
-
-```bash
-cd ~/harada-tsubakino-rover-agent
-git status --short
-```
-
-何も表示されなければ以下を実行し、成功後にGUIのLaunchを起動し直す。
+実験とLaunchを停止し、GUIのArgsへ以下を追加して起動し直す。
 
 ```bash
-git checkout main
-git pull --ff-only origin main
-python3 update.py -r
+group:=pi1 instrumented_drive:=false
 ```
 
-`main` 側のlaunchには検証用の起動引数がないため、GUIのArgsから
-`instrumented_drive:=...`、`trace_enabled:=...`、`trace_mode:=...`、
-`trace_queue_capacity:=...`、`trace_publish_hz:=...`、`trace_summary_interval:=...`、`i2c_persistent:=...`
-を外す。ホスト名の `group:=...` は残す。
-Gitのブランチを戻すだけでは既にコピー済みのROSパッケージは切り替わらない。
+`pi1` は実機のホスト名に置き換える。この切替ではメーカー版の制御・車輪odomを使用し、
+内部ログ、I2C永続接続、車輪odom購読の滞留・転送待ち対策、エンコーダ折り返し補正は適用されない。
+シリアルセンサーの監視は引き続き動作する。
+
+改善版へ戻す場合は、Launchを停止して `instrumented_drive:=false` を外すか
+`instrumented_drive:=true` に変える。`trace_mode:=off` は追加計測を止めるだけで、
+走行処理は改善版のままである。mainへ切り替えてもメーカー版には戻らない。
 
 ## PCでの保存
 
@@ -238,7 +231,7 @@ PC側は従来の実験と `DriveTraceRecorder` のままでよい。指令を
 記録器の更新や新しいトピックの購読は不要。新しい値は既存の
 `controller_timing` / `wheel_timing` に含まれる。
 
-1. 実験・Launchを停止し、このブランチを更新して `python3 update.py -r` でPiへ配置する。
+1. 実験・Launchを停止し、mainを更新して `python3 update.py -r` でPiへ配置する。
 2. PCの記録器を開始し、GUIのArgsを `group:=pi1 trace_mode:=minimal i2c_persistent:=false` としてLaunchを起動し直す。
 3. 従来どおりPCの実験を開始し、ゼロ指令のまま約80秒記録する。
    最初の約10秒（集計連番1・2）を除いて、完全な集計窓を60秒分以上確保する。
@@ -275,7 +268,7 @@ Pi側のmaster指定がPCなら、この検索はPCとの通信を伴う。
 
 ## 永続接続との比較
 
-Piへこのブランチを更新・再配置し、実験とLaunchを停止してから行う。
+実験とLaunchを停止し、Piのmainを更新・再配置してから行う。
 非永続接続の記録と同じPC側の実験・記録器を使い、以下のArgsでLaunchを起動する。
 
 ```text
@@ -315,7 +308,7 @@ PC記録器・Arduino・メーカーのパッケージを更新する必要は�
 この設定はログのfull/minimal/offにかかわらず、計測版の制御ノードに適用する。
 メーカー版を選ぶ `instrumented_drive:=false` の処理は変更しない。
 
-実験とLaunchを停止し、検証ブランチを更新して `python3 update.py -r` でPiへ再配置する。
+実験とLaunchを停止し、mainを更新して `python3 update.py -r` でPiへ再配置する。
 PCの記録器を開始し、次のArgsでLaunchを起動し直す。
 
 ```text
@@ -352,7 +345,7 @@ TCPROSの接続要求を通じて配信側ソケットのNagleアルゴリズム
 TCP転送待ちは原因候補であり、この設定による改善は実機で確認する。
 制御を固定周期化する変更ではなく、車輪odomの受信を契機に制御する構成を維持する。
 
-1. 実験とLaunchを停止し、検証ブランチを更新して `python3 update.py -r` でPiへ再配置する。
+1. 実験とLaunchを停止し、mainを更新して `python3 update.py -r` でPiへ再配置する。
 2. PCの記録器を開始し、Argsを `group:=pi1 trace_mode:=full` としてLaunchを起動し直す。
    I2C永続接続は既定で有効。PC側は従来と同じ周期でゼロ指令を送り、約80秒記録する。
 3. 実験終了後に記録器を閉じる。最初の約10秒を除き、60秒分以上を前の設定のログと比較する。
@@ -377,7 +370,7 @@ fullの `wheel_sample` は、受信した値の単純な差 `raw_delta_counts` �
 `used_delta_counts` は、従来と同じ車輪符号を適用して実際に計算へ使った値。
 full/minimal/offの全モードにこの補正を適用する。
 
-実験とLaunchを停止し、このブランチを更新して `python3 update.py -r` で再配置する。
+実験とLaunchを停止し、mainを更新して `python3 update.py -r` で再配置する。
 Argsはこれまでどおり `group:=pi1 trace_mode:=full` を使い、
 小さい前後進・旋回で0付近をまたぐときに補正後の差分が連続するか確認する。
 
