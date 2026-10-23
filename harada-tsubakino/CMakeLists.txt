@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   rospy
   std_msgs
+  std_srvs
   tf
 )
 
@@ -108,7 +109,7 @@ catkin_python_setup()
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES harada-tsubakino
- CATKIN_DEPENDS geometry_msgs lightrover_ros nav_msgs rospy std_msgs tf
+ CATKIN_DEPENDS geometry_msgs lightrover_ros nav_msgs rospy std_msgs std_srvs tf
 #  DEPENDS system_lib
 )
 
@@ -166,10 +167,12 @@ catkin_install_python(PROGRAMS
   scripts/serialSensorBridge.py
   scripts/tracedPosController.py
   scripts/tracedOdometry.py
+  scripts/tracedMotorOutputProbe.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 install(DIRECTORY launch/ DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch)
+install(DIRECTORY config/ DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config)
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html

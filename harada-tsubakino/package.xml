@@ -50,6 +50,8 @@
   <!--   <doc_depend>doxygen</doc_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
   <depend>lightrover_ros</depend>
+  <depend>std_srvs</depend>
+  <exec_depend>rosgraph</exec_depend>
   <exec_depend>python-numpy</exec_depend>
   <build_depend>geometry_msgs</build_depend>
   <build_depend>nav_msgs</build_depend>

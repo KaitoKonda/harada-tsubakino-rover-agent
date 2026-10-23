@@ -1,0 +1,25 @@
+<launch>
+  <arg name="group" default="$(optenv HOSTNAME rover)" />
+  <arg name="config" default="$(find harada-tsubakino)/config/motor_output_probe.yaml" />
+  <!-- Reuse existing I2C/odom by default. Stop every normal position controller.
+       Starting a vendor I2C server initializes the board, so it is opt-in. -->
+  <arg name="start_i2c" default="false" />
+  <arg name="start_wheel" default="false" />
+  <arg name="restore_snapshot" default="" />
+  <group ns="$(arg group)">
+    <node pkg="lightrover_ros" type="i2c_controller.py" name="output_probe_i2c"
+          if="$(arg start_i2c)" />
+    <node pkg="harada-tsubakino" type="tracedOdometry.py" name="output_probe_odometry"
+          if="$(arg start_wheel)">
+      <param name="trace_mode" value="full" />
+      <param name="i2c_persistent" type="bool" value="true" />
+      <remap from="odom" to="odometry/wheel" />
+      <remap from="/tf" to="/$(arg group)/wheel_tf_internal" />
+    </node>
+    <node pkg="harada-tsubakino" type="tracedMotorOutputProbe.py"
+          name="rover_output_probe" output="screen">
+      <rosparam command="load" file="$(arg config)" />
+      <param name="restore_snapshot" value="$(arg restore_snapshot)" />
+    </node>
+  </group>
+</launch>

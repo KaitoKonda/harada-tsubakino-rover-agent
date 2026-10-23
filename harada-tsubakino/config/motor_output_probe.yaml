@@ -1,0 +1,20 @@
+# A-C lifted-wheel probe. Copy this file and explicitly select limits/sequence.
+# The shipped values intentionally fail validation before any board access.
+trace_mode: full
+wheels_lifted: false
+output_limits: [0, 0]
+experiment: pulse                 # pulse | position | watchdog
+period_s: 0.1
+command_timeout_s: 0.3
+watchdog_ms: 500
+sensor_timeout_s: 0.3
+max_duration_s: 20.0
+watchdog_wait_s: 1.0
+sequence: []
+# sequence:
+#   - {duration_s: 0.5, t_out: [0, 0]}
+#   - {duration_s: 0.5, t_out: [SMALL_VALUE, 0]}
+#   - {duration_s: 0.5, t_out: [0, 0]}
+#   - {duration_s: 0.5, t_out: [-SMALL_VALUE, 0]}
+#   - {duration_s: 0.5, t_out: [0, 0]}
+# Values are signed T_OUT register counts, NOT m/s or confirmed duty ratios.
